@@ -1,0 +1,31 @@
+# Build artifacts
+.build/
+build/
+*.app
+*.app.zip
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode (if user opens Package.swift in Xcode)
+*.xcodeproj/
+xcuserdata/
+*.xcuserstate
+DerivedData/
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+*~
+
+# Secrets — never commit API keys
+.env
+*.key
+secrets/
