@@ -102,6 +102,7 @@ final class EntityExtractor: @unchecked Sendable {
     func extractAll(
         entries: [DiaryEntry],
         settings: AppSettings,
+        model: String,
         onProgress: @escaping @MainActor (Int, Int) -> Void
     ) async throws -> [DiaryEntry.ID: ExtractedEntities] {
         // 1. Figure out which need extraction
@@ -132,7 +133,7 @@ final class EntityExtractor: @unchecked Sendable {
                 guard let next = iterator.next() else { break }
                 inFlight += 1
                 group.addTask { [self] in
-                    let entities = try? await self.extractOne(entry: next, client: client)
+                    let entities = try? await self.extractOne(entry: next, client: client, model: model)
                     return (next, entities)
                 }
             }
@@ -147,7 +148,7 @@ final class EntityExtractor: @unchecked Sendable {
                 if let next = iterator.next() {
                     inFlight += 1
                     group.addTask { [self] in
-                        let e = try? await self.extractOne(entry: next, client: client)
+                        let e = try? await self.extractOne(entry: next, client: client, model: model)
                         return (next, e)
                     }
                 }
@@ -166,11 +167,11 @@ final class EntityExtractor: @unchecked Sendable {
 
     // MARK: - Internals
 
-    private func extractOne(entry: DiaryEntry, client: LLMClient) async throws -> ExtractedEntities {
+    private func extractOne(entry: DiaryEntry, client: LLMClient, model: String) async throws -> ExtractedEntities {
         let prompt = Self.prompt(for: entry)
         let req = ChatRequest(
             messages: [ChatMessage(role: .user, content: prompt)],
-            model: "MiniMax-M2.7",  // overridden by caller if needed
+            model: model,
             temperature: 0,
             maxTokens: 500
         )
@@ -230,37 +231,66 @@ final class EntityExtractor: @unchecked Sendable {
 
     // MARK: - Response parsing
 
+    /// Try to extract `ExtractedEntities` from the LLM's raw response.
+    /// The response might be:
+    ///   - bare JSON
+    ///   - JSON wrapped in a ```json``` fence
+    ///   - surrounded by <think>...</think> or other prose / thinking text
+    ///   - have stray braces in the prose that break naive "find first {"
+    ///
+    /// Strategy: collect every `{` index, try each as the start of a balanced
+    /// JSON object, decode the first one that succeeds.
     private static func parse(_ text: String) throws -> ExtractedEntities {
-        // Find the first {...} JSON object in the response
-        guard let openIdx = text.firstIndex(of: "{"),
-              let closeIdx = lastBalancedBrace(in: text, startingFrom: openIdx) else {
-            throw NSError(domain: "EntityExtractor", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "LLM 响应里没找到 JSON：\(text.prefix(200))"
-            ])
-        }
-        let jsonStr = String(text[text.index(after: openIdx)...closeIdx])
-        guard let data = jsonStr.data(using: .utf8) else {
-            throw NSError(domain: "EntityExtractor", code: 2, userInfo: [
-                NSLocalizedDescriptionKey: "JSON 编码失败"
-            ])
-        }
-        // The LLM sometimes wraps the string lists as `["a", "b"]` (good) but
-        // occasionally includes trailing commas or comments. Be lenient.
         let decoder = JSONDecoder()
-        do {
-            return try decoder.decode(ExtractedEntities.self, from: data)
-        } catch {
-            // Try one more thing: fix trailing commas
-            let fixed = jsonStr.replacingOccurrences(
+        let nsText = text as NSString
+        let len = nsText.length
+
+        // 0. If the whole text decodes as JSON (LLM returned pure JSON), use it.
+        if let data = text.data(using: .utf8),
+           let e = try? decoder.decode(ExtractedEntities.self, from: data) {
+            return e
+        }
+
+        // 1. Strip markdown code fences (keep the inner content)
+        if let fenceStart = text.range(of: "```"),
+           let fenceEnd = text.range(of: "```", range: fenceStart.upperBound..<text.endIndex) {
+            let inner = String(text[fenceStart.upperBound..<fenceEnd.lowerBound])
+            if let data = inner.data(using: .utf8),
+               let e = try? decoder.decode(ExtractedEntities.self, from: data) {
+                return e
+            }
+        }
+
+        // 2. Try every `{` as a candidate open brace.
+        var openIndices: [String.Index] = []
+        for i in 0..<len {
+            let c = nsText.character(at: i)
+            if c == 0x7B /* { */ as unichar {
+                openIndices.append(text.index(text.startIndex, offsetBy: i))
+            }
+        }
+        for openIdx in openIndices {
+            guard let closeIdx = lastBalancedBrace(in: text, startingFrom: openIdx) else { continue }
+            let candidate = String(text[openIdx...closeIdx])
+            if let data = candidate.data(using: .utf8),
+               let e = try? decoder.decode(ExtractedEntities.self, from: data) {
+                return e
+            }
+            // Lenient: try with trailing-comma fix
+            let fixed = candidate.replacingOccurrences(
                 of: #",\s*([}\]])"#,
                 with: "$1",
                 options: .regularExpression
             )
-            if let fdata = fixed.data(using: .utf8) {
-                return try decoder.decode(ExtractedEntities.self, from: fdata)
+            if let fdata = fixed.data(using: .utf8),
+               let e = try? decoder.decode(ExtractedEntities.self, from: fdata) {
+                return e
             }
-            throw error
         }
+
+        throw NSError(domain: "EntityExtractor", code: 1, userInfo: [
+            NSLocalizedDescriptionKey: "LLM 响应里没找到合法 JSON。前 200 字：\(text.prefix(200))"
+        ])
     }
 
     private static func lastBalancedBrace(in s: String, startingFrom start: String.Index) -> String.Index? {

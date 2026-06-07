@@ -32,8 +32,11 @@ struct ContentView: View {
         ZStack {
             // Layered liquid-glass backdrop. The animated blobs behind
             // the content give the glass surfaces something organic to refract.
+            // `.allowsHitTesting(false)` so the backdrop never intercepts
+            // clicks meant for the tab bar / content above it.
             LiquidBackdrop()
                 .ignoresSafeArea()
+                .allowsHitTesting(false)
 
             VStack(spacing: 0) {
                 // Always-visible custom top tab bar (replaces macOS 26's
@@ -98,9 +101,10 @@ struct TopTabBar<Tab: Identifiable & Hashable>: View {
     private func tabButton(tab: Tab, index: Int) -> some View {
         let isActive = (tab == selected)
         return Button {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                selected = tab
-            }
+            // No animation wrap — when the user double-clicks or rapid-tabs,
+            // animations can drop the second click. Direct assignment is
+            // immediate.
+            selected = tab
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon(tab))
@@ -120,9 +124,14 @@ struct TopTabBar<Tab: Identifiable & Hashable>: View {
                     }
                 }
             }
+            // Make the whole padded label a hit target, not just the text
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.command])
+        // Spring animation on the visual state change (active pill moves)
+        // — not on the selection change, so it can't drop a click.
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: selected)
     }
 }
 

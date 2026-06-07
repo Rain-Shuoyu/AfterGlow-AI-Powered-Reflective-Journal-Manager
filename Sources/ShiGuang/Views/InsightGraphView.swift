@@ -314,6 +314,7 @@ struct InsightGraphView: View {
             let results = try await EntityExtractor.shared.extractAll(
                 entries: store.entries,
                 settings: settingsStore.settings,
+                model: settingsStore.settings.model,
                 onProgress: { done, total in
                     progress = (done, total)
                 }
