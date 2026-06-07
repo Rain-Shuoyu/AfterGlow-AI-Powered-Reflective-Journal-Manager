@@ -124,12 +124,16 @@ enum StatisticsEngine {
     // MARK: - Word frequency (content)
 
     /// Frequent *content* words across all entries' bodies, minus a stopword
-    /// set. CJK characters are tokenized per-character; latin runs are
-    /// tokenized per-word. Two-character CJK bigrams are also included —
-    /// single Chinese characters carry too little meaning on their own.
+    /// set and capped at a sensible length so a long unpunctuated Chinese
+    /// sentence doesn't get counted as a single mega-token.
+    ///
+    /// Tokenization:
+    ///   - Latin runs → per-word (lowercased)
+    ///   - CJK runs  → 1-gram per char + 2-gram (bigram) sliding window
+    ///   - Either way: drop tokens longer than the cap (CJK 6, Latin 1 word)
     static func wordFrequency(
         entries: [DiaryEntry],
-        maxResults: Int = 60
+        maxResults: Int = 50
     ) -> [(word: String, count: Int)] {
         var freq: [String: Int] = [:]
         for e in entries {
@@ -151,6 +155,8 @@ enum StatisticsEngine {
         "上", "下", "里", "外", "中", "前", "后", "内", "间", "边",
         "什么", "怎么", "为什么", "如何", "可以", "可能", "应该", "觉得",
         "今天", "昨天", "明天", "现在", "以前", "以后", "时候",
+        "我们", "你们", "他们", "她们", "它们",
+        "因为", "所以", "但是", "如果", "虽然", "然后", "接着", "于是",
         // English
         "the", "a", "an", "and", "or", "but", "is", "are", "was", "were",
         "in", "on", "at", "to", "for", "of", "with", "by", "as", "from",
@@ -162,21 +168,80 @@ enum StatisticsEngine {
     ]
 
     private static func countWords(in text: String, into freq: inout [String: Int]) {
-        // Split on whitespace + ASCII punctuation. CJK punctuation like
-        // ，。！？；：、 are also strip chars here.
+        // Tokenize per character scalar: build runs of CJK vs runs of "other".
+        // - CJK run   → unigrams + bigrams (2-char windows)
+        // - Other run → split on whitespace + punctuation, per-word
         let separators = CharacterSet.whitespacesAndNewlines
             .union(.punctuationCharacters)
             .union(CharacterSet(charactersIn: "，。！？；：、（）「」『』《》…—"))
-        let tokens = text.unicodeScalars
-            .split { separators.contains($0) }
-            .map { String(String.UnicodeScalarView($0)).lowercased() }
-            .filter { !$0.isEmpty && $0.count >= 2 && !stopwords.contains($0) }
 
-        for tok in tokens {
-            // For mixed CJK + Latin text: also add the raw CJK chars
-            // as individual tokens (with weight 1) if they're meaningful.
-            freq[tok, default: 0] += 1
+        // Build a "type per char" map: 0=skip, 1=CJK, 2=other
+        var kinds: [Int] = []
+        kinds.reserveCapacity(text.unicodeScalars.count)
+        for s in text.unicodeScalars {
+            if separators.contains(s) {
+                kinds.append(0)
+            } else if isCJK(s) {
+                kinds.append(1)
+            } else {
+                kinds.append(2)
+            }
         }
+
+        let chars = Array(text)
+        var i = 0
+        while i < chars.count {
+            // Skip separators
+            while i < chars.count && kinds[i] == 0 { i += 1 }
+            if i >= chars.count { break }
+
+            // Find run [start, end)
+            let start = i
+            let kind = kinds[i]
+            while i < chars.count && kinds[i] == kind { i += 1 }
+            let end = i
+            let run = String(chars[start..<end])
+
+            if kind == 1 {
+                // CJK run: emit 1-grams and 2-grams
+                let cjkChars = Array(run)
+                // 1-gram: each character (skipping stopword single chars)
+                for ch in cjkChars {
+                    let s = String(ch)
+                    if !stopwords.contains(s) {
+                        freq[s, default: 0] += 1
+                    }
+                }
+                // 2-gram: every adjacent pair
+                if cjkChars.count >= 2 {
+                    for j in 0..<(cjkChars.count - 1) {
+                        let bigram = String(cjkChars[j...j+1])
+                        // Skip bigrams that are entirely stopword chars
+                        let a = String(cjkChars[j])
+                        let b = String(cjkChars[j+1])
+                        if stopwords.contains(a) && stopwords.contains(b) { continue }
+                        freq[bigram, default: 0] += 1
+                    }
+                }
+            } else {
+                // Other run: per-word (lowercased), cap to single token
+                for word in run.split(whereSeparator: { $0.isWhitespace || $0.isPunctuation }) {
+                    let lower = String(word).lowercased()
+                    if lower.count >= 2 && !stopwords.contains(lower) {
+                        freq[lower, default: 0] += 1
+                    }
+                }
+            }
+        }
+    }
+
+    private static func isCJK(_ scalar: Unicode.Scalar) -> Bool {
+        let v = scalar.value
+        return (0x4E00...0x9FFF).contains(v)
+            || (0x3400...0x4DBF).contains(v)
+            || (0x3040...0x309F).contains(v)
+            || (0x30A0...0x30FF).contains(v)
+            || (0xAC00...0xD7AF).contains(v)
     }
 
     // MARK: - Daily / monthly metrics

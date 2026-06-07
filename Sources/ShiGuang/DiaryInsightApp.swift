@@ -25,13 +25,8 @@ struct ShiGuangApp: App {
             ContentView()
                 .environmentObject(store)
                 .environmentObject(settingsStore)
-                .onAppear {
-                    // Restore last-used folder on launch
-                    if let path = settingsStore.settings.diaryFolderPath,
-                       FileManager.default.fileExists(atPath: path) {
-                        store.folderURL = URL(fileURLWithPath: path)
-                    }
-                }
+                // DiaryStore.init() already restores the last folder from
+                // UserDefaults — no manual onAppear wiring needed.
         }
         .commands {
             CommandGroup(replacing: .newItem) { }

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @EnvironmentObject var store: DiaryStore
     @EnvironmentObject var settingsStore: SettingsStore
     @State private var testing: Bool = false
     @State private var testResult: String?
@@ -59,20 +60,14 @@ struct SettingsView: View {
     private var diaryFolderRow: some View {
         HStack {
             Image(systemName: "folder")
-                .foregroundStyle(.tint)
-            Text(settingsStore.settings.diaryFolderPath ?? "未选择")
+                .foregroundStyle(DS.Brand.amber)
+            Text(store.folderURL?.path ?? "未选择")
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
             LiquidButton("选择…", systemImage: nil) {
-                let panel = NSOpenPanel()
-                panel.canChooseFiles = false
-                panel.canChooseDirectories = true
-                panel.allowsMultipleSelection = false
-                if panel.runModal() == .OK, let url = panel.url {
-                    settingsStore.settings.diaryFolderPath = url.path
-                }
+                store.pickFolder()
             }
         }
     }
