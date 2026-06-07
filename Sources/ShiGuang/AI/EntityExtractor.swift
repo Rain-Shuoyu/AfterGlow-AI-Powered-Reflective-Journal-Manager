@@ -97,11 +97,12 @@ final class EntityExtractor: @unchecked Sendable {
 
     /// Extract entities for the given entries. Already-cached entries are
     /// skipped; new/stale ones are sent to the LLM with bounded concurrency.
-    /// `onProgress` is called with (done, total) from a background queue.
+    /// `onProgress` is invoked on the main actor so callers can write to
+    /// SwiftUI @State directly.
     func extractAll(
         entries: [DiaryEntry],
         settings: AppSettings,
-        onProgress: @escaping @Sendable (Int, Int) -> Void
+        onProgress: @escaping @MainActor (Int, Int) -> Void
     ) async throws -> [DiaryEntry.ID: ExtractedEntities] {
         // 1. Figure out which need extraction
         let toExtract: [DiaryEntry] = lock.withLock {
@@ -116,7 +117,7 @@ final class EntityExtractor: @unchecked Sendable {
         var results = cached(entries: entries)
         let total = entries.count
         let alreadyDone = total - toExtract.count
-        await MainActor.run { onProgress(alreadyDone, total) }
+        await onProgress(alreadyDone, total)
         guard !toExtract.isEmpty else { return results }
 
         // 3. Run LLM in parallel with bounded concurrency
@@ -142,7 +143,7 @@ final class EntityExtractor: @unchecked Sendable {
                 if let entities = entities {
                     results[entry.id] = entities
                 }
-                await MainActor.run { onProgress(completed, total) }
+                await onProgress(completed, total)
                 if let next = iterator.next() {
                     inFlight += 1
                     group.addTask { [self] in

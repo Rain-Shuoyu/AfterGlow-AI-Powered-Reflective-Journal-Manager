@@ -106,10 +106,10 @@ enum GraphBuilder {
             vel[n.id] = .zero
         }
 
-        let kRepel: CGFloat = 4500   // Coulomb constant
-        let kSpring: CGFloat = 0.045 // Hooke constant (attraction)
-        let restLength: CGFloat = 90 // ideal edge length
-        let kCenter: CGFloat = 0.012 // pull-toward-center
+        let kRepel: CGFloat = 18000   // Coulomb constant (stronger so disconnected nodes don't collapse)
+        let kSpring: CGFloat = 0.035 // Hooke constant (attraction)
+        let restLength: CGFloat = 110 // ideal edge length
+        let kCenter: CGFloat = 0.004 // pull-toward-center (weaker, was collapsing 10-node graphs)
         let damping: CGFloat = 0.82
         let nodeIds = nodes.map { $0.id }
         let edgePairs: [(DiaryEntry.ID, DiaryEntry.ID)] = edges.map { ($0.source, $0.target) }

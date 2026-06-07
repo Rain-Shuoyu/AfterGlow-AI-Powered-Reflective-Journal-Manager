@@ -9,6 +9,7 @@ struct InsightGraphView: View {
     @State private var progress: (done: Int, total: Int) = (0, 0)
     @State private var extractionError: String?
     @State private var positions: [DiaryEntry.ID: CGPoint] = [:]
+    @State private var lastLayoutBounds: CGSize = .zero
     @State private var selectedEntry: DiaryEntry?
 
     // Interaction
@@ -17,6 +18,8 @@ struct InsightGraphView: View {
     @State private var lastPan: CGSize = .zero
     @State private var lastZoom: CGFloat = 1.0
     @State private var hoveredID: DiaryEntry.ID?
+
+    private let layoutBounds = CGSize(width: 1100, height: 700)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -74,9 +77,8 @@ struct InsightGraphView: View {
         if store.entries.isEmpty { return "选目录后开始" }
         if isExtracting { return "正在调用 LLM 抽取实体…" }
         if extractions.isEmpty { return "点「生成关系」开始抽取" }
-        let nNodes = extractions.count
-        let nEdges = GraphBuilder.build(entries: store.entries, extractions: extractions).edges.count
-        return "\(nNodes) 节点 · \(nEdges) 边"
+        let edges = GraphBuilder.build(entries: store.entries, extractions: extractions).edges
+        return "\(extractions.count) 节点 · \(edges.count) 边"
     }
 
     // MARK: - Content
@@ -100,6 +102,10 @@ struct InsightGraphView: View {
             )
         } else if let err = extractionError {
             placeholder(icon: "exclamationmark.triangle", title: "抽取失败", subtitle: err)
+        } else if positions.isEmpty {
+            // Have extractions but layout hasn't run yet — run it now.
+            Color.clear
+                .onAppear { recomputeLayout() }
         } else {
             graphCanvas
         }
@@ -122,22 +128,14 @@ struct InsightGraphView: View {
 
     private var graphCanvas: some View {
         GeometryReader { geo in
-            let (nodes, edges) = GraphBuilder.build(entries: store.entries, extractions: extractions)
-            let positionsResolved: [DiaryEntry.ID: CGPoint] = positions.isEmpty
-                ? GraphBuilder.layout(nodes: nodes, edges: edges,
-                                     bounds: CGSize(width: geo.size.width, height: geo.size.height))
-                : positions
-            let nodeById = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0) })
-            let edgeByPair = edges
-
             Canvas { ctx, size in
                 let center = CGPoint(x: size.width / 2, y: size.height / 2)
                 ctx.translateBy(x: center.x + pan.width, y: center.y + pan.height)
                 ctx.scaleBy(x: zoom, y: zoom)
 
                 // Draw edges
-                for e in edgeByPair {
-                    guard let a = positionsResolved[e.source], let b = positionsResolved[e.target] else { continue }
+                for e in GraphBuilder.build(entries: store.entries, extractions: extractions).edges {
+                    guard let a = positions[e.source], let b = positions[e.target] else { continue }
                     let isHighlighted = (hoveredID == e.source || hoveredID == e.target)
                     var path = Path()
                     path.move(to: a)
@@ -151,14 +149,11 @@ struct InsightGraphView: View {
                 }
 
                 // Draw nodes
-                for n in nodes {
-                    let p = positionsResolved[n.id] ?? .zero
+                for n in GraphBuilder.build(entries: store.entries, extractions: extractions).nodes {
+                    let p = positions[n.id] ?? .zero
                     let r = nodeRadius(n.entry)
                     let isHovered = (hoveredID == n.id)
-                    let isAdjacent = hoveredID != nil && edges.contains { edge in
-                        (edge.source == hoveredID && edge.target == n.id) ||
-                        (edge.target == hoveredID && edge.source == n.id)
-                    }
+                    let isAdjacent = isAdjacentToHovered(n.id)
                     let alpha: Double = {
                         if hoveredID == nil { return 1.0 }
                         if isHovered || isAdjacent { return 1.0 }
@@ -193,34 +188,34 @@ struct InsightGraphView: View {
                     }
                 }
             }
+            .contentShape(Rectangle())
             .gesture(panGesture)
             .gesture(zoomGesture)
             .onTapGesture { location in
-                if let hit = hitTest(location: location,
-                                    nodeById: nodeById,
-                                    positions: positionsResolved,
-                                    geo: geo) {
+                if let hit = hitTest(location: location, geo: geo) {
                     selectedEntry = hit
                 }
             }
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let loc):
-                    hoveredID = hitTest(location: loc,
-                                       nodeById: nodeById,
-                                       positions: positionsResolved,
-                                       geo: geo)?.id
+                    hoveredID = hitTest(location: loc, geo: geo)?.id
                 case .ended:
                     hoveredID = nil
                 }
             }
-            .onAppear {
-                if positions.isEmpty {
-                    positions = positionsResolved
-                }
-            }
         }
         .background(Color.clear)
+    }
+
+    // MARK: - Adjacency
+
+    private func isAdjacentToHovered(_ id: DiaryEntry.ID) -> Bool {
+        guard let h = hoveredID else { return false }
+        return GraphBuilder.build(entries: store.entries, extractions: extractions)
+            .edges.contains { e in
+                (e.source == h && e.target == id) || (e.target == h && e.source == id)
+            }
     }
 
     // MARK: - Gestures
@@ -250,33 +245,32 @@ struct InsightGraphView: View {
 
     // MARK: - Hit testing
 
-    private func hitTest(
-        location: CGPoint,
-        nodeById: [DiaryEntry.ID: GraphNode],
-        positions: [DiaryEntry.ID: CGPoint],
-        geo: GeometryProxy
-    ) -> DiaryEntry? {
+    private func hitTest(location: CGPoint, geo: GeometryProxy) -> DiaryEntry? {
         let center = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
-        // Convert tap point to graph-space
         let gx = (location.x - center.x - pan.width) / zoom
         let gy = (location.y - center.y - pan.height) / zoom
-        // Find closest node within radius
+
+        let nodes = GraphBuilder.build(entries: store.entries, extractions: extractions).nodes
+        let nodeById = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0) })
+
         var bestNode: DiaryEntry? = nil
         var bestDist: CGFloat = .greatestFiniteMagnitude
-        for (id, p) in positions {
+        for n in nodes {
+            guard let p = positions[n.id] else { continue }
             let dx = p.x - gx, dy = p.y - gy
             let d2 = dx * dx + dy * dy
             if d2 < bestDist {
                 bestDist = d2
-                bestNode = nodeById[id]?.entry
+                bestNode = n.entry
             }
         }
-        if let node = bestNode, let p = positions[node.id] {
+        if let node = bestNode {
             let r = nodeRadius(node)
             if bestDist <= (r + 4) * (r + 4) {
                 return node
             }
         }
+        _ = nodeById   // silence unused warning
         return nil
     }
 
@@ -301,9 +295,10 @@ struct InsightGraphView: View {
     private func loadCached() {
         let cached = EntityExtractor.shared.cached(entries: store.entries)
         extractions = cached
-        positions = [:]   // force relayout when data changes
+        recomputeLayout()
     }
 
+    @MainActor
     private func runExtraction(force: Bool) async {
         guard !store.entries.isEmpty else { return }
         guard !settingsStore.settings.apiKey.isEmpty else {
@@ -324,9 +319,29 @@ struct InsightGraphView: View {
                 }
             )
             extractions = results
-            positions = [:]   // relayout
+            recomputeLayout()
         } catch {
             extractionError = error.localizedDescription
         }
+    }
+
+    /// Run the force-directed layout with the current extractions and save
+    /// positions to state. Always re-runs after extraction so the saved state
+    /// matches the latest data.
+    @MainActor
+    private func recomputeLayout() {
+        guard !store.entries.isEmpty else {
+            positions = [:]
+            return
+        }
+        let (nodes, edges) = GraphBuilder.build(entries: store.entries, extractions: extractions)
+        let new = GraphBuilder.layout(
+            nodes: nodes,
+            edges: edges,
+            iterations: 220,
+            bounds: layoutBounds
+        )
+        positions = new
+        lastLayoutBounds = layoutBounds
     }
 }
