@@ -1,6 +1,6 @@
 import Foundation
+import Security
 
-/// Persists `AppSettings` in UserDefaults, and the API key in macOS Keychain.
 /// We deliberately keep these separate — UserDefaults plist files sync to iCloud
 /// by default and are easy to dump, while Keychain is the right home for secrets.
 final class SettingsStore: ObservableObject {
@@ -31,38 +31,10 @@ final class SettingsStore: ObservableObject {
         else {
             return AppSettings.default
         }
-        decoded = Self.migrate(decoded)
+        // Pull the API key out of the Keychain. If missing, the user just
+        // hasn't set one yet — that's a valid empty state, no crash.
         decoded.apiKey = Keychain.read(service: "com.diaryinsight.apikey", account: "default") ?? ""
         return decoded
-    }
-
-    /// Bring older saved settings up to `AppSettings.currentSchemaVersion`.
-    /// - v1 → v2: snap LLM provider/baseURL/model to the new defaults (MiniMax Mavis gateway).
-    /// - v2 → v3: re-snap to the corrected MiniMax defaults (public api.minimax.chat / M2.7).
-    ///            User customisations like temperature, diaryFolderPath, system prompt,
-    ///            and the Keychain-stored API key are preserved.
-    private static func migrate(_ s: AppSettings) -> AppSettings {
-        var settings = s
-        if settings.schemaVersion < 2 {
-            settings.provider = .minimax
-            settings.baseURL = AppSettings.LLMProvider.minimax.defaultBaseURL
-            settings.model = AppSettings.LLMProvider.minimax.defaultModel
-            settings.schemaVersion = 2
-        }
-        if settings.schemaVersion < 3 {
-            // The Mavis-internal gateway URL we used in v2 is NOT the same as
-            // the public minimaxi.com console API. v3 points at the public endpoint.
-            settings.baseURL = AppSettings.LLMProvider.minimax.defaultBaseURL
-            settings.model = AppSettings.LLMProvider.minimax.defaultModel
-            settings.schemaVersion = 3
-        }
-        if settings.schemaVersion != AppSettings.currentSchemaVersion {
-            // Persist the migrated settings so the migration only runs once.
-            if let data = try? JSONEncoder().encode(settings) {
-                UserDefaults.standard.set(data, forKey: "DiaryInsight.AppSettings.v1")
-            }
-        }
-        return settings
     }
 
     private func save() {
@@ -79,71 +51,61 @@ final class SettingsStore: ObservableObject {
 
     func reset() {
         settings = AppSettings.default
+        // Also wipe the keychain entry so "reset" truly means reset.
+        Keychain.delete(service: keychainService, account: keychainAccount)
     }
 }
 
-// MARK: - Minimal Keychain wrapper
-// We deliberately avoid importing Security as a heavy framework and just use the
-// `security` CLI via Process for portability. For a sandboxed Mac App Store build
-// you'd want to swap this for `SecItemAdd` etc. — keep this layer thin.
+// MARK: - Keychain wrapper (Security framework, no subprocess)
+// The previous implementation shelled out to `/usr/bin/security` which on
+// macOS 26 can pop a keychain-access GUI dialog on the main thread and
+// trigger an AttributeGraph watchdog abort. In-process Security
+// framework calls avoid both the GUI prompt and the cross-process dance.
 enum Keychain {
     @discardableResult
     static func write(_ value: String, service: String, account: String) -> Bool {
-        let proc = Process()
-        proc.launchPath = "/usr/bin/security"
-        proc.arguments = [
-            "add-generic-password",
-            "-a", account,
-            "-s", service,
-            "-w", value,
-            "-U"   // update if exists
+        let data = Data(value.utf8)
+        let baseQuery: [String: Any] = [
+            kSecClass as String:       kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
         ]
-        proc.standardOutput = Pipe()
-        proc.standardError = Pipe()
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-            return proc.terminationStatus == 0
-        } catch {
-            return false
-        }
+        // Remove any existing entry under the same service+account so
+        // SecItemAdd doesn't bail with errSecDuplicateItem.
+        SecItemDelete(baseQuery as CFDictionary)
+
+        var addQuery = baseQuery
+        addQuery[kSecValueData as String] = data
+        // After-first-unlock is the right accessibility for a CLI-style
+        // helper app that might be launched before the user logs in.
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+
+        let status = SecItemAdd(addQuery as CFDictionary, nil)
+        return status == errSecSuccess
     }
 
     static func read(service: String, account: String) -> String? {
-        let proc = Process()
-        proc.launchPath = "/usr/bin/security"
-        proc.arguments = [
-            "find-generic-password",
-            "-a", account,
-            "-s", service,
-            "-w"   // print password only
+        let query: [String: Any] = [
+            kSecClass as String:       kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String:  true,
+            kSecMatchLimit as String:  kSecMatchLimitOne
         ]
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = Pipe()
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-            guard proc.terminationStatus == 0,
-                  let data = try? pipe.fileHandleForReading.readToEnd(),
-                  let s = String(data: data, encoding: .utf8) else { return nil }
-            return s.trimmingCharacters(in: .whitespacesAndNewlines)
-        } catch {
-            return nil
-        }
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        // errSecItemNotFound is the normal "no key yet" case — return nil
+        // without raising.
+        guard status == errSecSuccess, let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     static func delete(service: String, account: String) {
-        let proc = Process()
-        proc.launchPath = "/usr/bin/security"
-        proc.arguments = [
-            "delete-generic-password",
-            "-a", account,
-            "-s", service
+        let query: [String: Any] = [
+            kSecClass as String:       kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
         ]
-        proc.standardOutput = Pipe()
-        proc.standardError = Pipe()
-        try? proc.run()
-        proc.waitUntilExit()
+        SecItemDelete(query as CFDictionary)
     }
 }
