@@ -6,12 +6,13 @@ struct ContentView: View {
     @State private var selectedTab: Tab = .stats
 
     enum Tab: String, Hashable, CaseIterable, Identifiable {
-        case stats, chat, settings
+        case stats, timeline, chat, settings
         var id: String { rawValue }
 
         var label: String {
             switch self {
             case .stats: return "统计"
+            case .timeline: return "时间线"
             case .chat: return "AI"
             case .settings: return "设置"
             }
@@ -20,6 +21,7 @@ struct ContentView: View {
         var systemImage: String {
             switch self {
             case .stats: return "chart.bar.xaxis"
+            case .timeline: return "calendar.day.timeline.left"
             case .chat: return "sparkles"
             case .settings: return "slider.horizontal.3"
             }
@@ -50,6 +52,7 @@ struct ContentView: View {
                 Group {
                     switch selectedTab {
                     case .stats:    StatsView()
+                    case .timeline: JournalView()
                     case .chat:     ChatView()
                     case .settings: SettingsView()
                     }

@@ -20,7 +20,6 @@ struct StatsView: View {
                     heatmap
                     trend
                     moodAndTags
-                    recentEntries
                 }
             }
             .padding(.horizontal, DS.Spacing.xl)
@@ -197,39 +196,6 @@ struct StatsView: View {
                             Capsule(style: .continuous)
                                 .fill(.regularMaterial)
                         }
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - Recent entries (no card, just a flowing list)
-
-    private var recentEntries: some View {
-            VStack(alignment: .leading, spacing: DS.Spacing.m) {
-                SectionTitle("最近 10 篇")
-                VStack(spacing: 1) {
-                    ForEach(store.entries.prefix(10), id: \.id) { e in
-                    HStack(alignment: .top, spacing: DS.Spacing.m) {
-                        Text(e.date.short)
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(width: 90, alignment: .leading)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(e.title).font(.body.weight(.medium)).lineLimit(1)
-                            Text(e.preview).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                        }
-                        Spacer()
-                        Text("\(e.wordCount) 字")
-                            .font(.caption).foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, DS.Spacing.m)
-                    .background {
-                        // Each row is its own glass strip — almost invisible, just a tint
-                        RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous)
-                            .fill(.quaternary.opacity(0.4))
                     }
                 }
             }

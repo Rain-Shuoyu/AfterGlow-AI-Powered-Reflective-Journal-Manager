@@ -4,6 +4,11 @@
 
 > 拾光 —— 把过去写下的字，重新照亮一遍。
 
+## Contributors
+
+- **Rain Shuoyu** — creator & maintainer
+- **[MiniMax](https://github.com/MiniMax)** — AI integration, default LLM provider
+
 > macOS 13+ · Swift 5.9+ · 纯 SwiftUI · 单进程，无外部依赖，无网络爬虫，无第三方 SDK。
 
 ## 它能做什么
