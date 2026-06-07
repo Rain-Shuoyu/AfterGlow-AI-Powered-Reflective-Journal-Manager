@@ -36,9 +36,11 @@ enum GraphBuilder {
             if let x = extractions[e.id] { acc[e.id] = x }
         }
 
-        // Nodes: deterministic initial positions on a circle, indexed by date order.
+        // Nodes: deterministic initial positions on a smaller circle.
+        // The force simulation will re-space them, but starting tight means
+        // the layout converges faster and the result stays compact.
         let sortedEntries = entries.sorted { $0.date < $1.date }
-        let radius: CGFloat = 220
+        let radius: CGFloat = max(60, CGFloat(sortedEntries.count) * 8)
         let nodes: [GraphNode] = sortedEntries.enumerated().map { idx, e in
             let n = CGFloat(max(sortedEntries.count, 1))
             let angle = (CGFloat(idx) / n) * 2 * .pi
@@ -106,11 +108,14 @@ enum GraphBuilder {
             vel[n.id] = .zero
         }
 
-        let kRepel: CGFloat = 18000   // Coulomb constant (stronger so disconnected nodes don't collapse)
-        let kSpring: CGFloat = 0.035 // Hooke constant (attraction)
-        let restLength: CGFloat = 110 // ideal edge length
-        let kCenter: CGFloat = 0.004 // pull-toward-center (weaker, was collapsing 10-node graphs)
-        let damping: CGFloat = 0.82
+        // Tuned for the typical "personal journal" graph: 5–50 nodes, mostly
+        // sparse with a few tight clusters. Goal is a compact cluster, not a
+        // outer ring of lonely dots.
+        let kRepel: CGFloat = 6500    // moderate repulsion — prevents overlap
+        let kSpring: CGFloat = 0.06  // edges pull noticeably
+        let restLength: CGFloat = 75 // connected nodes prefer this distance
+        let kCenter: CGFloat = 0.012 // strong-ish center pull keeps graph compact
+        let damping: CGFloat = 0.84
         let nodeIds = nodes.map { $0.id }
         let edgePairs: [(DiaryEntry.ID, DiaryEntry.ID)] = edges.map { ($0.source, $0.target) }
 

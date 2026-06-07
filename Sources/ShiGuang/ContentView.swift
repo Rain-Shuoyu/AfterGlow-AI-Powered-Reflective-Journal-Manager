@@ -64,8 +64,8 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 980, minHeight: 640)
-        .tint(.accentColor)
-        // Default to dark mode — the colorful liquid backdrop reads
+        .tint(DS.Brand.amber)   // single brand accent for system controls
+        // Default to dark mode — the amber liquid backdrop reads
         // better against a dark surface than a light one.
         .preferredColorScheme(.dark)
     }
@@ -119,8 +119,8 @@ struct TopTabBar<Tab: Identifiable & Hashable>: View {
                 Group {
                     if isActive {
                         Capsule(style: .continuous)
-                            .fill(.tint)
-                            .shadow(color: .accentColor.opacity(0.4), radius: 8, y: 2)
+                            .fill(DS.Brand.amber)
+                            .shadow(color: DS.Brand.amber.opacity(0.45), radius: 8, y: 2)
                     }
                 }
             }
@@ -147,16 +147,15 @@ struct LiquidBackdrop: View {
         TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             Canvas { ctx, size in
-                let p1Color: Color = colorScheme == .dark
-                    ? Color(red: 0.30, green: 0.50, blue: 0.95)
-                    : Color(red: 0.45, green: 0.70, blue: 1.0)
-                let p2Color: Color = colorScheme == .dark
-                    ? Color(red: 0.85, green: 0.35, blue: 0.65)
-                    : Color(red: 0.95, green: 0.55, blue: 0.85)
-                let p3Color: Color = colorScheme == .dark
-                    ? Color(red: 0.30, green: 0.75, blue: 0.55)
-                    : Color(red: 0.55, green: 0.90, blue: 0.75)
-                let baseOpacity: Double = colorScheme == .dark ? 0.35 : 0.55
+                // Three brand-aligned hues:
+                //   p1: amber  (the afterglow itself)
+                //   p2: warm rose  (complementary warm)
+                //   p3: deep teal-blue  (cool counterpoint so the warm tones don't feel monotone)
+                // Same colors in both modes; only the base opacity changes.
+                let p1Color = DS.Brand.amber
+                let p2Color = Color(red: 0.78, green: 0.45, blue: 0.55)
+                let p3Color = Color(red: 0.30, green: 0.45, blue: 0.58)
+                let baseOpacity: Double = colorScheme == .dark ? 0.32 : 0.50
 
                 let p1 = blob(in: size, seed: 0, t: t, scale: 0.55)
                 let p2 = blob(in: size, seed: 1, t: t, scale: 0.45)
@@ -174,7 +173,7 @@ struct LiquidBackdrop: View {
                 ctx.fill(
                     Path(ellipseIn: p2),
                     with: .radialGradient(
-                        Gradient(colors: [p2Color.opacity(baseOpacity * 0.85), .clear]),
+                        Gradient(colors: [p2Color.opacity(baseOpacity * 0.78), .clear]),
                         center: CGPoint(x: p2.midX, y: p2.midY),
                         startRadius: 0,
                         endRadius: p2.width / 2
@@ -183,7 +182,7 @@ struct LiquidBackdrop: View {
                 ctx.fill(
                     Path(ellipseIn: p3),
                     with: .radialGradient(
-                        Gradient(colors: [p3Color.opacity(baseOpacity * 0.75), .clear]),
+                        Gradient(colors: [p3Color.opacity(baseOpacity * 0.70), .clear]),
                         center: CGPoint(x: p3.midX, y: p3.midY),
                         startRadius: 0,
                         endRadius: p3.width / 2

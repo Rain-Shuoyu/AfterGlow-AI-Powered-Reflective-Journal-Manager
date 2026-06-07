@@ -65,20 +65,20 @@ struct ModePicker: View {
                 Button {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { mode = m }
                 } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: m.systemImage)
-                            .font(.caption)
-                        Text(m.rawValue)
-                            .font(.callout.weight(isActive ? .semibold : .regular))
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .foregroundStyle(isActive ? .white : .primary)
-                    .background {
-                        if isActive {
-                            Capsule(style: .continuous).fill(.tint)
-                        }
-                    }
+            HStack(spacing: 5) {
+                Image(systemName: m.systemImage)
+                    .font(.caption)
+                Text(m.rawValue)
+                    .font(.callout.weight(isActive ? .semibold : .regular))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .foregroundStyle(isActive ? DS.Brand.ink : .primary)
+            .background {
+                if isActive {
+                    Capsule(style: .continuous).fill(DS.Brand.amber)
+                }
+            }
                 }
                 .buttonStyle(.plain)
             }

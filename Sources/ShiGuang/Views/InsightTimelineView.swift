@@ -256,16 +256,7 @@ private struct TimelineRow: View {
         return df.string(from: entry.date)
     }
 
-    private var moodColor: Color {
-        switch entry.frontmatter.mood {
-        case 1: return .red
-        case 2: return .orange
-        case 3: return .gray
-        case 4: return .green
-        case 5: return .mint
-        default: return .accentColor
-        }
-    }
+    private var moodColor: Color { DS.Mood.color(entry.frontmatter.mood) }
 }
 
 // MARK: - Detail sheet
@@ -336,7 +327,7 @@ struct DiaryDetailSheet: View {
                         Text(t)
                             .font(.caption)
                             .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Capsule().fill(.tint.opacity(0.12)))
+                            .background(Capsule().fill(DS.Brand.amberSoft))
                     }
                 }
             }
@@ -344,14 +335,5 @@ struct DiaryDetailSheet: View {
         .padding(DS.Spacing.l)
     }
 
-    private func moodColor(_ id: Int) -> Color {
-        switch id {
-        case 1: return .red
-        case 2: return .orange
-        case 3: return .gray
-        case 4: return .green
-        case 5: return .mint
-        default: return .accentColor
-        }
-    }
+    private func moodColor(_ id: Int) -> Color { DS.Mood.color(id) }
 }

@@ -101,8 +101,8 @@ struct StatsView: View {
                     StatPill(label: "总日记数", value: "\(store.stats.totalEntries)", systemImage: "doc.text")
                     StatPill(label: "总字数", value: store.stats.totalWords.formatted(), systemImage: "textformat")
                     StatPill(label: "平均每篇", value: String(format: "%.0f", store.stats.averageWordsPerEntry), systemImage: "chart.bar")
-                    StatPill(label: "最长连续", value: "\(store.stats.writingStreakDays) 天", systemImage: "flame", tint: .orange)
-                    StatPill(label: "当前连续", value: "\(store.stats.currentStreakDays) 天", systemImage: "calendar.badge.checkmark", tint: .green)
+                    StatPill(label: "最长连续", value: "\(store.stats.writingStreakDays) 天", systemImage: "flame", tint: DS.Mood.color(2))
+                    StatPill(label: "当前连续", value: "\(store.stats.currentStreakDays) 天", systemImage: "calendar.badge.checkmark", tint: DS.Mood.color(4))
                     if let r = store.stats.dateRange {
                         let days = (Calendar.current.dateComponents([.day], from: r.start, to: r.end).day ?? 0) + 1
                         StatPill(label: "覆盖天数", value: "\(days)", systemImage: "calendar")
@@ -174,7 +174,7 @@ struct StatsView: View {
         .padding(.vertical, DS.Spacing.m)
         .background {
             RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous)
-                .fill(moodColor(bucket.id).opacity(0.18))
+                .fill(DS.Mood.color(bucket.id).opacity(0.16))
         }
     }
 
@@ -194,7 +194,7 @@ struct StatsView: View {
                         .padding(.horizontal, 10).padding(.vertical, 5)
                         .background {
                             Capsule(style: .continuous)
-                                .fill(.regularMaterial)
+                                .fill(DS.Brand.amberSoft)
                         }
                     }
                 }
@@ -203,15 +203,4 @@ struct StatsView: View {
     }
 
     // MARK: - Helpers
-
-    private func moodColor(_ id: Int) -> Color {
-        switch id {
-        case 1: return .red
-        case 2: return .orange
-        case 3: return .gray
-        case 4: return .green
-        case 5: return .mint
-        default: return .gray
-        }
-    }
 }

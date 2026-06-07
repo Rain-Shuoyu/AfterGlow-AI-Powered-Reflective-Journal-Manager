@@ -143,7 +143,7 @@ struct InsightGraphView: View {
                     let baseWidth: CGFloat = 0.5 + CGFloat(e.weight) * 0.7
                     ctx.stroke(
                         path,
-                        with: .color(isHighlighted ? .accentColor.opacity(0.85) : .secondary.opacity(0.25)),
+                        with: .color(isHighlighted ? DS.Brand.amber.opacity(0.85) : .secondary.opacity(0.20)),
                         style: StrokeStyle(lineWidth: baseWidth, lineCap: .round)
                     )
                 }
@@ -166,7 +166,7 @@ struct InsightGraphView: View {
                             x: p.x - r - 6, y: p.y - r - 6,
                             width: 2 * (r + 6), height: 2 * (r + 6)
                         ))
-                        ctx.stroke(halo, with: .color(.accentColor.opacity(0.5)),
+                        ctx.stroke(halo, with: .color(DS.Brand.amber.opacity(0.6)),
                                    style: StrokeStyle(lineWidth: 2))
                     }
 
@@ -279,16 +279,7 @@ struct InsightGraphView: View {
         return 9 + CGFloat(bonus)
     }
 
-    private func moodColor(_ mood: Int?) -> Color {
-        switch mood {
-        case 1: return .red
-        case 2: return .orange
-        case 3: return .gray
-        case 4: return .green
-        case 5: return .mint
-        default: return .accentColor
-        }
-    }
+    private func moodColor(_ mood: Int?) -> Color { DS.Mood.color(mood) }
 
     // MARK: - Extraction
 

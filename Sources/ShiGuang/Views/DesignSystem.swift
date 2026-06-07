@@ -29,6 +29,49 @@ enum DS {
         static let glassRegular: Double = 0.7
         static let glassProminent: Double = 0.85
     }
+
+    /// 拾光 (Afterglow) brand palette. Single accent color used everywhere
+    /// "chrome" so the app reads as one voice. Data-semantic colors (mood
+    /// 1–5, etc.) are deliberately *not* in here — they stay neutral and
+    /// always mean the same thing.
+    enum Brand {
+        /// Primary amber — the afterglow. Used for active tabs, primary
+        /// buttons, user message bubbles, etc.
+        static let amber = Color(red: 0.91, green: 0.66, blue: 0.49)        // #E8A87C
+
+        /// Slightly more saturated amber — hover/active states, halo glows.
+        static let amberDeep = Color(red: 0.95, green: 0.64, blue: 0.38)    // #F4A261
+
+        /// Tinted backgrounds (chip fills, hover states). Use opacity 0.10–0.20.
+        static let amberSoft = Color(red: 0.91, green: 0.66, blue: 0.49).opacity(0.14)
+
+        /// Deep ink — window base. Slight warm cast, not pure black.
+        static let ink = Color(red: 0.06, green: 0.07, blue: 0.09)         // #0F1116
+
+        /// Slightly raised surface (cards, modals).
+        static let inkRaised = Color(red: 0.10, green: 0.11, blue: 0.14)   // #1A1D24
+
+        /// Warm paper — primary text in dark mode.
+        static let paper = Color(red: 0.96, green: 0.94, blue: 0.91)      // #F5F0E8
+
+        /// Warm secondary text.
+        static let warmGray = Color(red: 0.64, green: 0.62, blue: 0.57)   // #A39E92
+    }
+
+    /// Data-semantic colors. Only used where the *meaning* of the color matters
+    /// (mood 1–5, error/success, etc.). Do NOT use these for decoration.
+    enum Mood {
+        static func color(_ mood: Int?) -> Color {
+            switch mood {
+            case 1: return Color(red: 0.93, green: 0.42, blue: 0.42)         // muted red
+            case 2: return Color(red: 0.95, green: 0.62, blue: 0.36)         // muted orange
+            case 3: return Color(red: 0.60, green: 0.60, blue: 0.58)         // warm gray
+            case 4: return Color(red: 0.52, green: 0.78, blue: 0.58)         // muted green
+            case 5: return Color(red: 0.46, green: 0.86, blue: 0.72)         // muted mint
+            default: return Brand.amber
+            }
+        }
+    }
 }
 
 extension View {
@@ -121,13 +164,16 @@ struct StatPill: View {
     let label: String
     let value: String
     let systemImage: String
-    var tint: Color = .accentColor
+    /// Optional override (e.g. mood 1 → muted red). When `nil`, brand amber.
+    var tint: Color? = nil
+
+    private var iconColor: Color { tint ?? DS.Brand.amber }
 
     var body: some View {
         HStack(spacing: DS.Spacing.s) {
             Image(systemName: systemImage)
                 .font(.callout)
-                .foregroundStyle(tint)
+                .foregroundStyle(iconColor)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(value)

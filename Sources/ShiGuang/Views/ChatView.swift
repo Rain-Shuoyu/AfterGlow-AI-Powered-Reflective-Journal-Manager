@@ -135,10 +135,10 @@ struct ChatView: View {
                     .frame(width: 36, height: 36)
                     .background {
                         Circle()
-                            .fill(.tint)
+                            .fill(DS.Brand.amber)
                             .squircle(DS.Radius.pill)
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(DS.Brand.ink)
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.return, modifiers: [.command])
@@ -282,12 +282,12 @@ struct MessageBubble: View {
             if message.role == .user { Spacer(minLength: 60) }
             if message.role == .assistant {
                 Circle()
-                    .fill(.tint.opacity(0.18))
+                    .fill(DS.Brand.amber.opacity(0.20))
                     .frame(width: 30, height: 30)
                     .overlay {
                         Image(systemName: "sparkles")
                             .font(.caption)
-                            .foregroundStyle(.tint)
+                            .foregroundStyle(DS.Brand.amberDeep)
                     }
             }
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
@@ -316,7 +316,7 @@ struct MessageBubble: View {
                     Group {
                         if message.role == .user {
                             RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous)
-                                .fill(.tint.opacity(0.30))
+                                .fill(DS.Brand.amber.opacity(0.32))
                         } else {
                             RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous)
                                 .fill(.regularMaterial)
