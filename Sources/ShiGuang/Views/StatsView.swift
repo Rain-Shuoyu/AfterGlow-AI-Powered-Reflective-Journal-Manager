@@ -18,7 +18,7 @@ struct StatsView: View {
                 } else {
                     statStrip
                     heatmap
-                    trend
+                    trendAndWordCloud
                     moodAndTags
                 }
             }
@@ -125,13 +125,24 @@ struct StatsView: View {
         }
     }
 
-    // MARK: - Trend
+    // MARK: - Trend + Word cloud (side-by-side)
 
-    private var trend: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.m) {
-            SectionTitle("月度趋势", subtitle: "柱 = 字数；折线 = 平均情绪（×1000）")
-            TrendChartView(monthly: store.stats.monthlyWordCounts)
-                .padding(.top, DS.Spacing.s)
+    private var trendAndWordCloud: some View {
+        HStack(alignment: .top, spacing: DS.Spacing.xl) {
+            VStack(alignment: .leading, spacing: DS.Spacing.m) {
+                SectionTitle("月度趋势", subtitle: "柱 = 字数；折线 = 平均情绪")
+                TrendChartView(monthly: store.stats.monthlyWordCounts)
+                    .padding(.top, DS.Spacing.s)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: DS.Spacing.m) {
+                SectionTitle("词云", subtitle: "日记正文里出现最多的内容词")
+                WordCloudView(words: store.stats.wordFrequency)
+                    .padding(.top, DS.Spacing.s)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(width: 280, alignment: .leading)
         }
     }
 

@@ -17,7 +17,7 @@ struct TrendChartView: View {
                         x: .value("Month", label(for: m)),
                         y: .value("Words", m.wordCount)
                     )
-                    .foregroundStyle(by: .value("Series", "字数"))
+                    .foregroundStyle(DS.Brand.amber)
                 }
                 if monthly.contains(where: { $0.averageMood != nil }) {
                     ForEach(monthly.filter { $0.averageMood != nil }) { m in
@@ -25,12 +25,20 @@ struct TrendChartView: View {
                             x: .value("Month", label(for: m)),
                             y: .value("Mood", (m.averageMood ?? 3) * 1000)
                         )
-                        .foregroundStyle(by: .value("Series", "情绪(×1000)"))
-                        .symbol(by: .value("Series", "情绪(×1000)"))
+                        .foregroundStyle(Color(red: 0.78, green: 0.45, blue: 0.55))
+                        .symbol {
+                            Circle()
+                                .fill(Color(red: 0.78, green: 0.45, blue: 0.55))
+                                .frame(width: 6, height: 6)
+                        }
                     }
                 }
             }
             .chartLegend(.visible)
+            .chartForegroundStyleScale([
+                "字数":   DS.Brand.amber,
+                "平均情绪": Color(red: 0.78, green: 0.45, blue: 0.55)
+            ])
             .frame(minHeight: 220)
         }
     }

@@ -58,17 +58,21 @@ struct HeatmapView: View {
     }
 
     private func color(forIntensity i: Double) -> Color {
-        // 0..1 scale
-        let base: [Color] = [
-            Color(nsColor: .controlBackgroundColor),
-            Color(red: 0.78, green: 0.90, blue: 0.78),
-            Color(red: 0.50, green: 0.80, blue: 0.50),
-            Color(red: 0.22, green: 0.62, blue: 0.30),
-            Color(red: 0.10, green: 0.46, blue: 0.18)
+        // Unified amber palette: 5 steps from neutral background to deep
+        // amber. Same hue family as the brand, so heatmap reads as one
+        // voice with the rest of the stats view.
+        if i <= 0 {
+            return Color(nsColor: .controlBackgroundColor).opacity(0.4)
+        }
+        let palette: [Color] = [
+            DS.Brand.amber.opacity(0.18),
+            DS.Brand.amber.opacity(0.38),
+            DS.Brand.amber.opacity(0.62),
+            DS.Brand.amber.opacity(0.84),
+            DS.Brand.amberDeep
         ]
-        if i <= 0 { return base[0] }
-        let idx = max(1, min(base.count - 1, Int(ceil(i * Double(base.count - 1)))))
-        return base[idx]
+        let idx = max(0, min(palette.count - 1, Int(ceil(i * Double(palette.count - 1)))))
+        return palette[idx]
     }
 
     private var legend: some View {

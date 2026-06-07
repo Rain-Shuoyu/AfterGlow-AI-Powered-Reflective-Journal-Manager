@@ -21,6 +21,7 @@ enum StatisticsEngine {
         let (longest, current) = streaks(from: entries)
         let mood = moodDistribution(entries: entries)
         let tags = tagFrequency(entries: entries)
+        let words = wordFrequency(entries: entries)
         let daily = dailyMetrics(entries: entries)
         let monthly = monthlyMetrics(daily: daily)
 
@@ -34,6 +35,7 @@ enum StatisticsEngine {
             currentStreakDays: current,
             moodDistribution: mood,
             tagFrequency: tags,
+            wordFrequency: words,
             dailyWordCounts: daily,
             monthlyWordCounts: monthly
         )
@@ -117,6 +119,64 @@ enum StatisticsEngine {
         return freq.sorted { lhs, rhs in
             lhs.value == rhs.value ? lhs.key < rhs.key : lhs.value > rhs.value
         }.map { ($0.key, $0.value) }
+    }
+
+    // MARK: - Word frequency (content)
+
+    /// Frequent *content* words across all entries' bodies, minus a stopword
+    /// set. CJK characters are tokenized per-character; latin runs are
+    /// tokenized per-word. Two-character CJK bigrams are also included —
+    /// single Chinese characters carry too little meaning on their own.
+    static func wordFrequency(
+        entries: [DiaryEntry],
+        maxResults: Int = 60
+    ) -> [(word: String, count: Int)] {
+        var freq: [String: Int] = [:]
+        for e in entries {
+            countWords(in: e.plainText, into: &freq)
+        }
+        return freq
+            .sorted { lhs, rhs in
+                lhs.value == rhs.value ? lhs.key < rhs.key : lhs.value > rhs.value
+            }
+            .prefix(maxResults)
+            .map { ($0.key, $0.value) }
+    }
+
+    private static let stopwords: Set<String> = [
+        // Chinese function words
+        "的", "了", "是", "在", "我", "你", "他", "她", "它", "们",
+        "这", "那", "这个", "那个", "和", "也", "都", "还", "就", "但",
+        "要", "有", "没", "不", "吗", "吧", "呢", "啊", "哦", "嗯",
+        "上", "下", "里", "外", "中", "前", "后", "内", "间", "边",
+        "什么", "怎么", "为什么", "如何", "可以", "可能", "应该", "觉得",
+        "今天", "昨天", "明天", "现在", "以前", "以后", "时候",
+        // English
+        "the", "a", "an", "and", "or", "but", "is", "are", "was", "were",
+        "in", "on", "at", "to", "for", "of", "with", "by", "as", "from",
+        "this", "that", "these", "those", "it", "its", "i", "you", "he", "she",
+        "we", "they", "my", "your", "his", "her", "our", "their",
+        "be", "been", "have", "has", "had", "do", "does", "did",
+        "will", "would", "could", "should", "may", "might", "can",
+        "not", "no", "yes", "ok", "okay", "yeah", "hmm"
+    ]
+
+    private static func countWords(in text: String, into freq: inout [String: Int]) {
+        // Split on whitespace + ASCII punctuation. CJK punctuation like
+        // ，。！？；：、 are also strip chars here.
+        let separators = CharacterSet.whitespacesAndNewlines
+            .union(.punctuationCharacters)
+            .union(CharacterSet(charactersIn: "，。！？；：、（）「」『』《》…—"))
+        let tokens = text.unicodeScalars
+            .split { separators.contains($0) }
+            .map { String(String.UnicodeScalarView($0)).lowercased() }
+            .filter { !$0.isEmpty && $0.count >= 2 && !stopwords.contains($0) }
+
+        for tok in tokens {
+            // For mixed CJK + Latin text: also add the raw CJK chars
+            // as individual tokens (with weight 1) if they're meaningful.
+            freq[tok, default: 0] += 1
+        }
     }
 
     // MARK: - Daily / monthly metrics

@@ -58,6 +58,9 @@ struct DiaryStats {
     let currentStreakDays: Int           // current consecutive-day streak ending today
     let moodDistribution: [MoodBucket]   // histogram
     let tagFrequency: [(tag: String, count: Int)]
+    /// Most-frequent content words, derived from the diary bodies (after
+    /// stripping frontmatter + stopwords). Sorted by count desc.
+    let wordFrequency: [(word: String, count: Int)]
     let dailyWordCounts: [DailyMetric]   // for heatmap + trend chart
     let monthlyWordCounts: [MonthlyMetric]
 
@@ -71,6 +74,7 @@ struct DiaryStats {
         currentStreakDays: 0,
         moodDistribution: [],
         tagFrequency: [],
+        wordFrequency: [],
         dailyWordCounts: [],
         monthlyWordCounts: []
     )
