@@ -55,7 +55,7 @@ enum LLMError: LocalizedError {
     }
 }
 
-protocol LLMClient {
+protocol LLMClient: Sendable {
     /// Non-streaming: collects the full response and returns at the end.
     func chat(_ req: ChatRequest) async throws -> ChatResponse
 
@@ -71,7 +71,7 @@ protocol LLMClient {
 ///   - MiniMax public API (api.minimax.chat)
 ///   - Azure OpenAI (set baseURL to your deployment endpoint)
 ///   - any other OpenAI-compatible host (vLLM, LocalAI, Ollama's /v1, etc.)
-final class OpenAIClient: LLMClient {
+final class OpenAIClient: LLMClient, @unchecked Sendable {
     let baseURL: URL
     let apiKey: String
     let session: URLSession
@@ -141,7 +141,7 @@ final class OpenAIClient: LLMClient {
 // MARK: - Anthropic client
 
 /// Implements Anthropic Messages API. Default baseURL is https://api.anthropic.com
-final class AnthropicClient: LLMClient {
+final class AnthropicClient: LLMClient, @unchecked Sendable {
     let baseURL: URL
     let apiKey: String
     let session: URLSession

@@ -3,7 +3,7 @@ import Foundation
 // MARK: - Diary Entry
 
 /// A single diary entry parsed from one markdown file.
-struct DiaryEntry: Identifiable, Hashable, Codable {
+struct DiaryEntry: Identifiable, Hashable, Codable, Sendable {
     let id: String              // stable id, derived from path
     let url: URL                // file URL on disk
     let date: Date              // the date this entry represents (from frontmatter `date:` or filename)
@@ -34,7 +34,7 @@ struct DiaryEntry: Identifiable, Hashable, Codable {
 
 /// Loose YAML frontmatter parser. Supports the small set of keys we actually use;
 /// anything else is kept as `extra` for round-tripping.
-struct Frontmatter: Hashable, Codable {
+struct Frontmatter: Hashable, Codable, Sendable {
     var mood: Int?              // 1-5 scale, optional
     var moodLabel: String?      // free-form label, e.g. "低落", "焦虑"
     var weather: String?

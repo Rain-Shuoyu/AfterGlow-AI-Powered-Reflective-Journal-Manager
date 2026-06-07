@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct JournalView: View {
+struct InsightTimelineView: View {
     @EnvironmentObject var store: DiaryStore
     @State private var selectedEntry: DiaryEntry?
 
