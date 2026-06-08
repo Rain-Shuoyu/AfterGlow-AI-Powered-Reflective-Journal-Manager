@@ -14,31 +14,55 @@ struct GraphEdge: Identifiable, Hashable {
     let id: String
     let source: DiaryEntry.ID
     let target: DiaryEntry.ID
-    /// Number of shared entities (the "strength" of the connection).
-    let weight: Int
-    let shared: [SharedPhrase]
-
-    struct SharedPhrase: Hashable {
-        let kind: EntityKind
-        let phrase: String
-    }
+    /// Cosine similarity in [0, 1] between the two entries' embeddings.
+    /// Used to scale the line width and to filter out unrelated pairs.
+    let weight: Double
+    /// Number of entries in the shared topical neighbourhood (used for
+    /// the "active" neighbour set in the hover UI). Cheap to compute
+    /// from the edge list itself.
+    let sharedNeighborCount: Int
 }
 
 // MARK: - Builder
 
+/// Builds the relationship graph from diary entries.
+///
+/// Edges are derived from **cosine similarity over Apple NLEmbedding**
+/// vectors — the same `EmbeddingIndex` used by the AI chat indexer.
+/// Two entries are connected when their content is semantically related
+/// (not just sharing exact words). This is the right call for a diary
+/// graph: phrase-matching misses paraphrases, mood echoes, and
+/// recurring themes that use different vocabulary on different days.
 enum GraphBuilder {
-    /// Build nodes and edges from a set of entries + their LLM extractions.
-    static func build(
-        entries: [DiaryEntry],
-        extractions: [DiaryEntry.ID: ExtractedEntities]
-    ) -> (nodes: [GraphNode], edges: [GraphEdge]) {
-        let entitiesByEntry: [DiaryEntry.ID: ExtractedEntities] = entries.reduce(into: [:]) { acc, e in
-            if let x = extractions[e.id] { acc[e.id] = x }
+
+    /// Cosine threshold below which a pair is considered unrelated and
+    /// gets no edge. Tuned for `NLEmbedding.wordEmbedding(.simplifiedChinese)`
+    /// bag-of-words vectors, where strongly related Chinese diary
+    /// entries typically land in 0.50–0.80, mildly related ones in
+    /// 0.20–0.45, and unrelated ones in 0.05–0.15.
+    ///
+    /// 0.50 keeps only meaningfully related pairs — most of the graph
+    /// becomes tight clusters of "really about the same thing"
+    /// rather than a noisy web of tenuous connections.
+    static let edgeThreshold: Double = 0.50
+
+    /// Build the graph. Synchronous because the underlying
+    /// `EmbeddingIndex.embeddingForEntry` reads from an in-memory cache
+    /// (persisted to disk) — so on warm runs the call is just a
+    /// dictionary lookup + a dot product per pair.
+    static func build(entries: [DiaryEntry]) -> (nodes: [GraphNode], edges: [GraphEdge]) {
+        // Resolve embeddings up front. Entries without an in-vocabulary
+        // token (e.g. emoji-only) won't get a vector; they're still in
+        // the node list but skip the edge pass.
+        var vectors: [DiaryEntry.ID: [Double]] = [:]
+        for e in entries {
+            if let v = EmbeddingIndex.shared.embeddingForEntry(e) {
+                vectors[e.id] = v
+            }
         }
 
-        // Nodes: deterministic initial positions on a smaller circle.
-        // The force simulation will re-space them, but starting tight means
-        // the layout converges faster and the result stays compact.
+        // Nodes: deterministic initial positions on a small circle;
+        // the force simulation re-spaces them.
         let sortedEntries = entries.sorted { $0.date < $1.date }
         let radius: CGFloat = max(60, CGFloat(sortedEntries.count) * 8)
         let nodes: [GraphNode] = sortedEntries.enumerated().map { idx, e in
@@ -51,41 +75,45 @@ enum GraphBuilder {
             )
         }
 
-        // Edges: O(N²) pair scan with shared-entity match.
-        var edges: [GraphEdge] = []
-        let entryList = Array(entitiesByEntry)
-        for i in 0..<entryList.count {
-            for j in (i + 1)..<entryList.count {
-                let (lhsID, lhsEnt) = entryList[i]
-                let (rhsID, rhsEnt) = entryList[j]
-                guard lhsID != rhsID else { continue }
-                let shared = sharedPhrases(lhs: lhsEnt, rhs: rhsEnt)
-                guard !shared.isEmpty else { continue }
-                let key = lhsID < rhsID
-                    ? "\(lhsID)-->\(rhsID)"
-                    : "\(rhsID)-->\(lhsID)"
-                edges.append(GraphEdge(
-                    id: key,
-                    source: lhsID,
-                    target: rhsID,
-                    weight: shared.count,
-                    shared: shared
-                ))
+        // Edges: O(N²) pairwise cosine. Two entries whose embeddings
+        // are above `edgeThreshold` get a connection; the similarity
+        // value becomes the edge weight (the UI scales the line
+        // width off it).
+        var rawEdges: [(DiaryEntry.ID, DiaryEntry.ID, Double)] = []
+        let idList = Array(vectors.keys)
+        for i in 0..<idList.count {
+            for j in (i + 1)..<idList.count {
+                let a = idList[i], b = idList[j]
+                let sim = EmbeddingIndex.shared.similarity(vectors[a]!, vectors[b]!)
+                if sim >= edgeThreshold {
+                    rawEdges.append((a, b, sim))
+                }
             }
         }
-        return (nodes, edges)
-    }
 
-    private static func sharedPhrases(lhs: ExtractedEntities, rhs: ExtractedEntities) -> [GraphEdge.SharedPhrase] {
-        var out: [GraphEdge.SharedPhrase] = []
-        for kind in EntityKind.allCases {
-            let l = Set(lhs.phrases(of: kind))
-            let r = Set(rhs.phrases(of: kind))
-            for phrase in l.intersection(r) {
-                out.append(.init(kind: kind, phrase: phrase))
-            }
+        // Pre-compute neighbour count per node (used by the UI for the
+        // "highlight all neighbours on hover" effect, even though
+        // that effect looks at edges directly — we expose this for
+        // any future detail views / legends that want to know how
+        // connected an entry is).
+        var degree: [DiaryEntry.ID: Int] = [:]
+        for (a, b, _) in rawEdges {
+            degree[a, default: 0] += 1
+            degree[b, default: 0] += 1
         }
-        return out
+
+        let edges: [GraphEdge] = rawEdges.map { (a, b, sim) in
+            let key = a < b ? "\(a)-->\(b)" : "\(b)-->\(a)"
+            return GraphEdge(
+                id: key,
+                source: a,
+                target: b,
+                weight: sim,
+                sharedNeighborCount: min(degree[a] ?? 0, degree[b] ?? 0)
+            )
+        }
+
+        return (nodes, edges)
     }
 
     // MARK: - Force-directed layout

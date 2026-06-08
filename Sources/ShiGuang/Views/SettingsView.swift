@@ -93,6 +93,20 @@ struct SettingsView: View {
                 }
             }
             fieldRow(label: "Base URL", text: $settingsStore.settings.baseURL, secure: false)
+            HStack {
+                Spacer()
+                Button {
+                    let d = AppSettings.defaults(for: settingsStore.settings.provider)
+                    settingsStore.settings.baseURL = d.baseURL
+                    settingsStore.settings.model = d.model
+                } label: {
+                    Label("重置为默认端点", systemImage: "arrow.counterclockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("恢复当前协议对应的官方端点")
+            }
             fieldRow(label: "Model", text: $settingsStore.settings.model, secure: false)
             fieldRow(label: "API Key", text: $settingsStore.settings.apiKey, secure: true)
             HStack {

@@ -1,21 +1,30 @@
 import Foundation
+import NaturalLanguage
 
-/// Lightweight, in-memory "retrieval" layer for diary entries.
+/// Two-stage retrieval for diary entries:
 ///
-/// We deliberately avoid a vector DB — the diary is small, queries are typically
-/// time-bounded ("六月", "上周", "和家人吵架"), and we want to keep the app
-/// fully local. This filter handles:
-///   - Chinese + English month keywords ("六月" / "June")
-///   - Year keywords ("2024", "去年")
-///   - Week / day / range phrases
-///   - Mood keywords ("心情不好", "焦虑", "开心")
-///   - Free-form keyword fallback (substring match in title / tags / content)
+/// 1. **Pre-filter** (cheap, deterministic, user-controlled):
+///    - Time phrases: "六月", "上周", "2024", "去年"
+///    - Mood keywords: "焦虑", "开心", "崩溃"
+///    - These narrow the candidate set so the LLM only sees the
+///      *relevant window* of the diary.
+///
+/// 2. **Semantic rank** (cosine similarity over Apple's NLEmbedding):
+///    - Tokenise each entry with `NLTokenizer` (CJK-aware, same as stats).
+///    - Average the per-token word vectors from
+///      `NLEmbedding.wordEmbedding(for: .simplifiedChinese)`.
+///    - L2-normalise, then dot product == cosine.
+///    - Cache to `~/Library/Application Support/ShiGuang/embeddings.json`,
+///      invalidated by a content hash.
+///
+/// Falls back to the old keyword-sort path if NLEmbedding is unavailable
+/// (very old macOS) or the query has no in-vocabulary token.
 struct DiaryQuery {
     var rawQuestion: String
 }
 
 struct DiaryFilterResult {
-    var entries: [DiaryEntry]   // filtered, ordered by date desc
+    var entries: [DiaryEntry]   // ranked: time/mood window + semantic top-K
     var explanation: String     // human-readable summary of what we matched
     var totalCandidates: Int    // size of the full index when this was computed
 }
@@ -25,8 +34,9 @@ enum DiaryIndexer {
     static func filter(entries: [DiaryEntry], for question: String, maxResults: Int = 30) -> DiaryFilterResult {
         let q = question.lowercased()
         var why: [String] = []
+        let index = EmbeddingIndex.shared
 
-        // 1. Mood-based filtering
+        // ── 1. Pre-filter: mood ────────────────────────────────────────
         let moodTerms: [(label: String, wantBad: Bool, wantGood: Bool)] = [
             ("心情不好", true, false),
             ("不开心", true, false),
@@ -42,107 +52,19 @@ enum DiaryIndexer {
         ]
         var wantBad = false
         var wantGood = false
-        for t in moodTerms {
-            if q.contains(t.label) {
-                if t.wantBad { wantBad = true }
-                if t.wantGood { wantGood = true }
-                why.append("情绪关键词「\(t.label)」")
-            }
+        for t in moodTerms where q.contains(t.label) {
+            if t.wantBad { wantBad = true }
+            if t.wantGood { wantGood = true }
+            why.append("情绪关键词「\(t.label)」")
         }
 
-        // 2. Time filtering
-        let now = Date()
-        let cal = Calendar.current
-        var dateRange: ClosedRange<Date>?
-        var rangeLabel = ""
-
-        // explicit "YYYY年MM月" or "MM月"
-        if let (year, month) = parseYearMonth(q) {
-            if let start = cal.date(from: DateComponents(year: year, month: month, day: 1)),
-               let end = cal.date(byAdding: DateComponents(month: 1, day: -1), to: start) {
-                let dayEnd = cal.date(byAdding: .day, value: 1, to: end) ?? end
-                dateRange = start...dayEnd
-                rangeLabel = "\(year)年\(month)月"
-                why.append("时间范围：\(rangeLabel)")
-            }
-        } else if let month = parseMonthName(q) {
-            // bare month name in current year
-            let comps = cal.dateComponents([.year], from: now)
-            if let year = comps.year, let start = cal.date(from: DateComponents(year: year, month: month, day: 1)),
-               let end = cal.date(byAdding: DateComponents(month: 1, day: -1), to: start) {
-                let dayEnd = cal.date(byAdding: .day, value: 1, to: end) ?? end
-                dateRange = start...dayEnd
-                rangeLabel = "\(year)年\(month)月"
-                why.append("时间范围：\(rangeLabel)")
-            }
-        } else if q.contains("上周") || q.contains("last week") {
-            if let lastWeekStart = cal.date(byAdding: .day, value: -13, to: now),
-               let lastWeekEnd = cal.date(byAdding: .day, value: -7, to: now) {
-                let s = cal.startOfDay(for: lastWeekStart)
-                let e = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: lastWeekEnd)) ?? lastWeekEnd
-                dateRange = s...e
-                rangeLabel = "上周"
-                why.append("时间范围：上周")
-            }
-        } else if q.contains("这周") || q.contains("本周") || q.contains("this week") {
-            if let weekStart = cal.dateInterval(of: .weekOfYear, for: now)?.start {
-                let s = cal.startOfDay(for: weekStart)
-                let e = cal.date(byAdding: .day, value: 1, to: now) ?? now
-                dateRange = s...e
-                rangeLabel = "本周"
-                why.append("时间范围：本周")
-            }
-        } else if q.contains("最近") || q.contains("latest") || q.contains("recent") {
-            let s = cal.date(byAdding: .day, value: -30, to: now) ?? now
-            dateRange = s...now
-            rangeLabel = "最近30天"
-            why.append("时间范围：最近30天")
-        } else if q.contains("去年") || q.contains("last year") {
-            let comps = cal.dateComponents([.year], from: now)
-            let currentYear = comps.year ?? Calendar.current.component(.year, from: now)
-            let year = currentYear - 1
-            if let s = cal.date(from: DateComponents(year: year, month: 1, day: 1)),
-               let e = cal.date(from: DateComponents(year: year + 1, month: 1, day: 1)) {
-                dateRange = s...e
-                rangeLabel = "\(year)年"
-                why.append("时间范围：\(year)年")
-            }
-        } else if let year = parseYear(q) {
-            if let s = cal.date(from: DateComponents(year: year, month: 1, day: 1)),
-               let e = cal.date(from: DateComponents(year: year + 1, month: 1, day: 1)) {
-                dateRange = s...e
-                rangeLabel = "\(year)年"
-                why.append("时间范围：\(year)年")
-            }
+        // ── 2. Pre-filter: time ────────────────────────────────────────
+        let (dateRange, rangeLabel) = parseTimeRange(q, why: &why)
+        if dateRange != nil {
+            why.append("时间范围：\(rangeLabel)")
         }
 
-        // 3. Free-text keywords (strip very common stopwords + the chinese numerals we used)
-        let stopwords: Set<String> = [
-            "的", "了", "是", "我", "你", "他", "她", "它", "我们", "你們", "的話",
-            "吗", "呢", "啊", "吧", "嘛", "哈", "哦",
-            "what", "which", "when", "where", "who", "do", "does", "did",
-            "is", "are", "was", "were", "the", "a", "an", "and", "or",
-            "有", "哪些", "什么", "怎么", "为什么", "哪些天", "哪天", "那些", "这个", "那个"
-        ]
-        // 3-char chunks + single Chinese chars (naive)
-        var keywords: [String] = []
-        let cleaned = q.replacingOccurrences(of: #"[，。！？、,!?.;:]"#, with: " ", options: .regularExpression)
-        for token in cleaned.split(whereSeparator: { $0.isWhitespace }) {
-            let t = String(token)
-            if t.count >= 2 && !stopwords.contains(t) { keywords.append(t) }
-        }
-        for ch in cleaned {
-            if let scalar = ch.unicodeScalars.first,
-               scalar.value >= 0x4E00, scalar.value <= 0x9FFF,  // CJK
-               !stopwords.contains(String(ch)) {
-                keywords.append(String(ch))
-            }
-        }
-        // de-dupe, keep order
-        var seen = Set<String>()
-        keywords = keywords.filter { seen.insert($0).inserted }
-
-        // 4. Apply filters
+        // ── 3. Build candidate set ─────────────────────────────────────
         var candidates = entries
         if let r = dateRange {
             candidates = candidates.filter { r.contains($0.date) }
@@ -153,32 +75,110 @@ enum DiaryIndexer {
             candidates = candidates.filter { ($0.frontmatter.mood ?? 3) >= 4 }
         }
 
-        // keyword filter (OR semantics, plus title/tag/date bonus)
-        let keywordFiltered: [DiaryEntry]
-        if !keywords.isEmpty {
-            keywordFiltered = candidates.filter { e in
-                let hay = (e.title + " " + e.plainText + " " + e.frontmatter.tags.joined(separator: " ")).lowercased()
-                return keywords.contains { hay.contains($0) }
+        // ── 4. Semantic rank ───────────────────────────────────────────
+        // Only enabled if NLEmbedding is on this Mac. Otherwise fall
+        // through to the date-desc ordering.
+        if index.isAvailable,
+           let queryVec = index.embed(question) {
+            var scored: [(DiaryEntry, Double)] = []
+            scored.reserveCapacity(candidates.count)
+            for entry in candidates {
+                if let v = index.embeddingForEntry(entry) {
+                    scored.append((entry, index.similarity(queryVec, v)))
+                } else {
+                    // Entry has no in-vocabulary tokens (e.g. emoji / numbers
+                    // only). Push it to the bottom with a tiny negative
+                    // score so the date filter still wins.
+                    scored.append((entry, -1.0))
+                }
             }
-            // If keyword filter would return zero rows, fall back to the time/range candidates
-            // (we still want to send the LLM the right window)
-            if !keywordFiltered.isEmpty {
-                candidates = keywordFiltered
-                why.append("关键词：\(keywords.prefix(5).joined(separator: ", "))")
-            } else {
-                why.append("（关键词无精确匹配，按时间范围兜底）")
+            scored.sort { lhs, rhs in
+                if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+                return lhs.0.date > rhs.0.date  // tie-break: newer first
             }
+            candidates = scored.map { $0.0 }
+            why.append("向量相似度排序")
+            // Persist any new embeddings computed during this query.
+            // (Non-blocking; the next saveCache from a write also flushes.)
+            index.saveCache()
         }
 
-        if dateRange == nil && !wantBad && !wantGood && keywords.isEmpty {
-            // open question -> return most recent N
-            candidates = Array(entries.prefix(maxResults))
-            why.append("未识别时间/情绪/关键词，取最近 \(maxResults) 篇")
+        // ── 5. Open question fallback ──────────────────────────────────
+        if dateRange == nil && !wantBad && !wantGood {
+            // No time/mood signal — the vector rank alone decides.
+            // If vector rank is also unavailable, the candidates are
+            // already date-sorted (DiaryStore gives them in date desc).
+            if !index.isAvailable {
+                why.append("无 NLEmbedding，按日期降序")
+            }
         }
 
         let limited = Array(candidates.prefix(maxResults))
         let explanation = why.isEmpty ? "已匹配全部" : why.joined(separator: "；")
         return DiaryFilterResult(entries: limited, explanation: explanation, totalCandidates: entries.count)
+    }
+
+    // MARK: - Time range parsing
+    //
+    // Extracted into a small helper so the main filter body stays focused
+    // on the retrieval pipeline. Returns (range, label) — label is set
+    // even when range is nil, but only appended to `why` at the call site
+    // when non-nil.
+
+    private static func parseTimeRange(_ q: String, why: inout [String]) -> (ClosedRange<Date>?, String) {
+        let now = Date()
+        let cal = Calendar.current
+
+        if let (year, month) = parseYearMonth(q) {
+            if let start = cal.date(from: DateComponents(year: year, month: month, day: 1)),
+               let end = cal.date(byAdding: DateComponents(month: 1, day: -1), to: start) {
+                let dayEnd = cal.date(byAdding: .day, value: 1, to: end) ?? end
+                return (start...dayEnd, "\(year)年\(month)月")
+            }
+        }
+        if let month = parseMonthName(q) {
+            if let year = cal.dateComponents([.year], from: now).year,
+               let start = cal.date(from: DateComponents(year: year, month: month, day: 1)),
+               let end = cal.date(byAdding: DateComponents(month: 1, day: -1), to: start) {
+                let dayEnd = cal.date(byAdding: .day, value: 1, to: end) ?? end
+                return (start...dayEnd, "\(year)年\(month)月")
+            }
+        }
+        if q.contains("上周") || q.contains("last week") {
+            if let s = cal.date(byAdding: .day, value: -13, to: now),
+               let e = cal.date(byAdding: .day, value: -7, to: now) {
+                let ss = cal.startOfDay(for: s)
+                let ee = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: e)) ?? e
+                return (ss...ee, "上周")
+            }
+        }
+        if q.contains("这周") || q.contains("本周") || q.contains("this week") {
+            if let weekStart = cal.dateInterval(of: .weekOfYear, for: now)?.start {
+                let s = cal.startOfDay(for: weekStart)
+                let e = cal.date(byAdding: .day, value: 1, to: now) ?? now
+                return (s...e, "本周")
+            }
+        }
+        if q.contains("最近") || q.contains("latest") || q.contains("recent") {
+            let s = cal.date(byAdding: .day, value: -30, to: now) ?? now
+            return (s...now, "最近30天")
+        }
+        if q.contains("去年") || q.contains("last year") {
+            let currentYear = cal.dateComponents([.year], from: now).year
+                ?? cal.component(.year, from: now)
+            let year = currentYear - 1
+            if let s = cal.date(from: DateComponents(year: year, month: 1, day: 1)),
+               let e = cal.date(from: DateComponents(year: year + 1, month: 1, day: 1)) {
+                return (s...e, "\(year)年")
+            }
+        }
+        if let year = parseYear(q) {
+            if let s = cal.date(from: DateComponents(year: year, month: 1, day: 1)),
+               let e = cal.date(from: DateComponents(year: year + 1, month: 1, day: 1)) {
+                return (s...e, "\(year)年")
+            }
+        }
+        return (nil, "")
     }
 
     // MARK: - Time parsing helpers

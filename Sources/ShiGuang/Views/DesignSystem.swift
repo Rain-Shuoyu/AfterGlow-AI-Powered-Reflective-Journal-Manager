@@ -170,6 +170,9 @@ struct StatPill: View {
     private var iconColor: Color { tint ?? DS.Brand.amber }
 
     var body: some View {
+        // No glass / material background — the user kept seeing it as a
+        // "rectangle matching the background color" cutting off the top of
+        // the pill row. Pills are just text now: icon + value + label.
         HStack(spacing: DS.Spacing.s) {
             Image(systemName: systemImage)
                 .font(.callout)
@@ -186,7 +189,6 @@ struct StatPill: View {
         }
         .padding(.horizontal, DS.Spacing.m)
         .padding(.vertical, DS.Spacing.s + 2)
-        .glassEffect(.regular, in: .capsule)
     }
 }
 
@@ -221,21 +223,27 @@ extension Date {
 
 // MARK: - Markdown text
 
-/// Renders a markdown string. Code blocks (```) are extracted and rendered as
-/// monospaced text on a tinted background; the rest is parsed as inline markdown
-/// via `AttributedString` (handles **bold**, *italic*, `code`, [links](url)).
+/// Renders a markdown string. Splits on:
+///   - Code fences (```) → monospaced tinted block
+///   - Blank lines (paragraph breaks) → separate Text views with
+///     `DS.Spacing.m` of visible space between them
+///
+/// The second pass matters because `Text("\n\n")` on macOS doesn't
+/// produce a *visible* paragraph gap inside a single Text — but a
+/// VStack of separate Text views does. So we explicitly split on `\n\n`
+/// and lay out one paragraph per row.
 struct MarkdownText: View {
     let markdown: String
     var baseFont: Font = .body
 
     var body: some View {
-        let segments = Self.split(markdown)
-        VStack(alignment: .leading, spacing: DS.Spacing.s) {
-            ForEach(Array(segments.enumerated()), id: \.offset) { _, seg in
-                if seg.isCode {
-                    codeBlock(seg.text)
+        let blocks = Self.split(markdown)
+        VStack(alignment: .leading, spacing: DS.Spacing.m) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                if block.isCode {
+                    codeBlock(block.text)
                 } else {
-                    inlineMarkdown(seg.text)
+                    inlineMarkdown(block.text)
                 }
             }
         }
@@ -253,10 +261,12 @@ struct MarkdownText: View {
             Text(attr)
                 .font(baseFont)
                 .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             Text(s)
                 .font(baseFont)
                 .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -272,28 +282,65 @@ struct MarkdownText: View {
             }
     }
 
-    // MARK: - Code-block splitter
+    // MARK: - Block splitter
+    //
+    // Two interleaved state machines:
+    //   - code fence tracking (``` toggles code/inline)
+    //   - paragraph break tracking (blank line ends a paragraph)
+    // Each output block is either a code block or a paragraph of inline
+    // markdown. Inline markdown parsing (AttributedString .full) handles
+    // **bold**, *italic*, `code`, links, lists, headings within a paragraph.
 
-    fileprivate struct Segment { let text: String; let isCode: Bool }
+    fileprivate struct Block { let text: String; let isCode: Bool }
 
-    fileprivate static func split(_ s: String) -> [Segment] {
-        var result: [Segment] = []
+    fileprivate static func split(_ s: String) -> [Block] {
+        var result: [Block] = []
         var inCode = false
-        var buf: [String] = []
+        var paraBuf: [String] = []    // accumulated lines of the current paragraph
+        var codeBuf: [String] = []    // accumulated lines of the current code block
+
+        func flushParagraph() {
+            let joined = paraBuf.joined(separator: "\n")
+            if !joined.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                result.append(.init(text: joined, isCode: false))
+            }
+            paraBuf.removeAll()
+        }
+        func flushCode() {
+            let joined = codeBuf.joined(separator: "\n")
+            result.append(.init(text: joined, isCode: true))
+            codeBuf.removeAll()
+        }
+
         for line in s.components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
+            // Code fence toggle — works in both modes.
             if trimmed.hasPrefix("```") {
-                if !buf.isEmpty {
-                    result.append(.init(text: buf.joined(separator: "\n"), isCode: inCode))
-                    buf.removeAll()
+                if inCode {
+                    // closing the code block
+                    flushCode()
+                    inCode = false
+                } else {
+                    // opening a new code block — flush any pending paragraph first
+                    flushParagraph()
+                    inCode = true
                 }
-                inCode.toggle()
                 continue
             }
-            buf.append(line)
+            if inCode {
+                codeBuf.append(line)
+            } else if trimmed.isEmpty {
+                // blank line → paragraph break
+                flushParagraph()
+            } else {
+                paraBuf.append(line)
+            }
         }
-        if !buf.isEmpty {
-            result.append(.init(text: buf.joined(separator: "\n"), isCode: inCode))
+        // Tail flush
+        if inCode {
+            flushCode()
+        } else {
+            flushParagraph()
         }
         if result.isEmpty {
             result.append(.init(text: s, isCode: false))

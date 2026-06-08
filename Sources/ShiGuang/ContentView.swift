@@ -6,11 +6,12 @@ struct ContentView: View {
     @State private var selectedTab: Tab = .stats
 
     enum Tab: String, Hashable, CaseIterable, Identifiable {
-        case stats, insight, chat, settings
+        case write, stats, insight, chat, settings
         var id: String { rawValue }
 
         var label: String {
             switch self {
+            case .write: return "写作"
             case .stats: return "统计"
             case .insight: return "洞察"
             case .chat: return "AI"
@@ -20,6 +21,7 @@ struct ContentView: View {
 
         var systemImage: String {
             switch self {
+            case .write: return "square.and.pencil"
             case .stats: return "chart.bar.xaxis"
             case .insight: return "lightbulb"
             case .chat: return "sparkles"
@@ -39,8 +41,9 @@ struct ContentView: View {
                 .allowsHitTesting(false)
 
             VStack(spacing: 0) {
-                // Always-visible custom top tab bar (replaces macOS 26's
-                // default TabView which auto-hides tabs on certain states).
+                // Top tab bar. No background, no overlay, no blur, no
+                // gradient. Just the capsule floating on the
+                // LiquidBackdrop.
                 TopTabBar(
                     selected: $selectedTab,
                     tabs: Tab.allCases,
@@ -54,6 +57,7 @@ struct ContentView: View {
                 // Content
                 Group {
                     switch selectedTab {
+                    case .write:    EditorTabView()
                     case .stats:    StatsView()
                     case .insight:  InsightView()
                     case .chat:     ChatView()

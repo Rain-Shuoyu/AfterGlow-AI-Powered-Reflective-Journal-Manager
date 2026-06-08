@@ -25,6 +25,12 @@ struct ChatRequest {
     var model: String
     var temperature: Double
     var maxTokens: Int = 2048
+    /// When false, suppress the model's reasoning/chain-of-thought
+    /// (MiniMax M2/M3 accept a top-level `"thinking": false` field in
+    /// the request body; other OpenAI-compatible providers ignore
+    /// unknown fields). When true, we omit the field and let the
+    /// provider's default kick in (thinking enabled for M-series).
+    var enableThinking: Bool = true
 }
 
 struct ChatResponse {
@@ -103,7 +109,7 @@ final class OpenAIClient: LLMClient, @unchecked Sendable {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 120
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": req.model,
             "messages": req.messages.map { m in
                 ["role": m.role.rawValue, "content": m.content]
@@ -112,6 +118,17 @@ final class OpenAIClient: LLMClient, @unchecked Sendable {
             "max_tokens": req.maxTokens,
             "stream": true
         ]
+        // Note: MiniMax M2.7 via the OpenAI-compatible /v1/chat/completions
+        // endpoint has NO working server-side "disable thinking" parameter
+        // (the `thinking` field is schema-valid but ignored for M2.7; it
+        // only works on the M3 /minimax-m3 model or the native
+        // /v1/text/chatcompletion_v2 endpoint).
+        //
+        // We rely on the client-side StreamParser + ChatView to drop the
+        // <think> block from the user-visible bubble when `enableThinking`
+        // is false. The model may still spend server-side time on the
+        // hidden chain-of-thought, but the user sees only the final answer
+        // and the thinking panel is suppressed.
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (bytes, response) = try await session.bytes(for: request)

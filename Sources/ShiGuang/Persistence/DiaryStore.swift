@@ -80,4 +80,62 @@ final class DiaryStore: ObservableObject {
             self.folderURL = url
         }
     }
+
+    // MARK: - Save (write editor state to a .md file)
+
+    /// Persist the editor state to a markdown file. Behavior:
+    ///   - If `state.editingURL` is set, overwrite that file (true edit).
+    ///   - Otherwise, create a new file named `YYYY-MM-DD.md` in the
+    ///     currently-selected folder. If a file with that name already
+    ///     exists, append `-2`, `-3`, ...
+    ///   - After a successful write, trigger a `reload()` so the new or
+    ///     changed entry shows up in the timeline / stats / graph views
+    ///     without the user having to bounce the folder.
+    /// - Returns: the URL of the file that was written, or nil if no
+    ///            folder is currently set / the write failed.
+    @discardableResult
+    func save(_ state: EditorState) -> URL? {
+        guard let folder = folderURL else {
+            lastError = "未选择日记目录，无法保存。请先在设置里选择一个文件夹。"
+            return nil
+        }
+        do {
+            // Ensure the folder still exists (user might have moved/deleted it).
+            try FileManager.default.createDirectory(
+                at: folder, withIntermediateDirectories: true)
+
+            let content = MarkdownSerializer.serialize(state)
+            let targetURL: URL
+            if let existing = state.editingURL {
+                targetURL = existing
+            } else {
+                let filename = MarkdownSerializer.availableFilename(
+                    for: state.date, in: folder)
+                targetURL = folder.appendingPathComponent(filename)
+            }
+
+            try content.write(to: targetURL, atomically: true, encoding: .utf8)
+
+            // Refresh the in-memory list so the new/edited entry shows up
+            // in StatsView / InsightView / ChatView's indexer right away.
+            reload()
+            return targetURL
+        } catch {
+            lastError = "保存失败：\(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    /// "Delete" a diary file. The file is moved to the soft-delete
+    /// recycle bin (`DiaryTrash`) rather than permanently removed, so
+    /// the user can restore it later. `reload()` re-scans the diary
+    /// folder so the list / stats / graph / chat indexer all pick up
+    /// the change immediately.
+    func delete(entry: DiaryEntry) {
+        if let _ = DiaryTrash.shared.trash(fileURL: entry.url) {
+            reload()
+        } else {
+            lastError = "删除失败：无法移到回收站"
+        }
+    }
 }

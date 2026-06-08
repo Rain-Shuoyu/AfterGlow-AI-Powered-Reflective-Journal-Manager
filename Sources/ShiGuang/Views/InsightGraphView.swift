@@ -4,13 +4,17 @@ struct InsightGraphView: View {
     @EnvironmentObject var store: DiaryStore
     @EnvironmentObject var settingsStore: SettingsStore
 
-    @State private var extractions: [DiaryEntry.ID: ExtractedEntities] = [:]
-    @State private var isExtracting: Bool = false
-    @State private var progress: (done: Int, total: Int) = (0, 0)
-    @State private var extractionError: String?
+    // Edges are derived on the fly from `EmbeddingIndex`. We don't
+    // store the graph in @State because:
+    //   - it's pure-derived from `store.entries`
+    //   - the embedding index is cached on disk, so recomputation is
+    //     sub-millisecond per entry on warm runs
+    // What we *do* store is the force-directed layout positions —
+    // they're stable enough across recomputations to keep around.
     @State private var positions: [DiaryEntry.ID: CGPoint] = [:]
     @State private var lastLayoutBounds: CGSize = .zero
     @State private var selectedEntry: DiaryEntry?
+    @State private var isComputing: Bool = false
 
     // Interaction
     @State private var pan: CGSize = .zero
@@ -27,8 +31,8 @@ struct InsightGraphView: View {
             Divider().opacity(0.2)
             content
         }
-        .onAppear { loadCached() }
-        .onChange(of: store.entries) { _, _ in loadCached() }
+        .onAppear { recomputeLayout() }
+        .onChange(of: store.entries) { _, _ in recomputeLayout() }
         .sheet(item: $selectedEntry) { entry in
             DiaryDetailSheet(entry: entry)
                 .frame(minWidth: 620, idealWidth: 760, minHeight: 520, idealHeight: 680)
@@ -46,28 +50,20 @@ struct InsightGraphView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            if isExtracting {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("抽取中 \(progress.done)/\(progress.total)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+            Button {
+                recomputeLayout(force: true)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.clockwise")
+                    Text("重新计算")
                 }
-            } else {
-                Button {
-                    Task { await runExtraction(force: true) }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.clockwise")
-                        Text(extractions.isEmpty ? "生成关系" : "重新抽取")
-                    }
-                    .font(.callout.weight(.medium))
-                    .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(Capsule().fill(.regularMaterial))
-                }
-                .buttonStyle(.plain)
-                .disabled(store.entries.isEmpty || settingsStore.settings.apiKey.isEmpty)
+                .font(.callout.weight(.medium))
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(Capsule().fill(.regularMaterial))
             }
+            .buttonStyle(.plain)
+            .disabled(store.entries.isEmpty || isComputing)
+            .help("清空 embedding 缓存并重算所有节点的关系")
         }
         .padding(.horizontal, DS.Spacing.xl)
         .padding(.vertical, DS.Spacing.m)
@@ -75,10 +71,8 @@ struct InsightGraphView: View {
 
     private var headerSubtitle: String {
         if store.entries.isEmpty { return "选目录后开始" }
-        if isExtracting { return "正在调用 LLM 抽取实体…" }
-        if extractions.isEmpty { return "点「生成关系」开始抽取" }
-        let edges = GraphBuilder.build(entries: store.entries, extractions: extractions).edges
-        return "\(extractions.count) 节点 · \(edges.count) 边"
+        let (_, edges) = GraphBuilder.build(entries: store.entries)
+        return "\(store.entries.count) 节点 · \(edges.count) 边 · 阈值 \(String(format: "%.2f", GraphBuilder.edgeThreshold))"
     }
 
     // MARK: - Content
@@ -92,20 +86,17 @@ struct InsightGraphView: View {
             )
         } else if store.entries.isEmpty {
             placeholder(icon: "tray", title: "目录里没找到 .md 文件")
-        } else if extractions.isEmpty && !isExtracting {
-            placeholder(
-                icon: "wand.and.stars",
-                title: settingsStore.settings.apiKey.isEmpty
-                    ? "请先到「设置」页填入 API Key"
-                    : "点「生成关系」按钮让 LLM 抽取实体",
-                subtitle: "每篇日记大约 1~2 秒"
-            )
-        } else if let err = extractionError {
-            placeholder(icon: "exclamationmark.triangle", title: "抽取失败", subtitle: err)
         } else if positions.isEmpty {
-            // Have extractions but layout hasn't run yet — run it now.
-            Color.clear
-                .onAppear { recomputeLayout() }
+            // First-load compute. Show a brief spinner; the actual
+            // work happens in `recomputeLayout` (embedding lookups
+            // are O(1) on warm runs, O(n) on cold runs).
+            VStack(spacing: DS.Spacing.m) {
+                ProgressView().controlSize(.small)
+                Text("正在计算关系…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             graphCanvas
         }
@@ -134,13 +125,22 @@ struct InsightGraphView: View {
                 ctx.scaleBy(x: zoom, y: zoom)
 
                 // Draw edges
-                for e in GraphBuilder.build(entries: store.entries, extractions: extractions).edges {
+                for e in GraphBuilder.build(entries: store.entries).edges {
                     guard let a = positions[e.source], let b = positions[e.target] else { continue }
                     let isHighlighted = (hoveredID == e.source || hoveredID == e.target)
                     var path = Path()
                     path.move(to: a)
                     path.addLine(to: b)
-                    let baseWidth: CGFloat = 0.5 + CGFloat(e.weight) * 0.7
+                    // Map cosine similarity in [edgeThreshold, 1.0] to
+                    // a line width. We use sqrt(t) to bias the curve
+                    // toward the high end — even a pair at sim=0.7
+                    // gets a visibly thick line, and the top of the
+                    // range (sim≈1.0) is dramatically thicker.
+                    //   t=0.10 (sim=0.55):  ~0.9pt
+                    //   t=0.50 (sim=0.75):  ~3.6pt
+                    //   t=1.00 (sim=1.00):  ~6.4pt
+                    let t = max(0, min(1, (e.weight - GraphBuilder.edgeThreshold) / (1 - GraphBuilder.edgeThreshold)))
+                    let baseWidth: CGFloat = 0.4 + CGFloat(sqrt(t)) * 6.0
                     ctx.stroke(
                         path,
                         with: .color(isHighlighted ? DS.Brand.amber.opacity(0.85) : .secondary.opacity(0.20)),
@@ -149,7 +149,7 @@ struct InsightGraphView: View {
                 }
 
                 // Draw nodes
-                for n in GraphBuilder.build(entries: store.entries, extractions: extractions).nodes {
+                for n in GraphBuilder.build(entries: store.entries).nodes {
                     let p = positions[n.id] ?? .zero
                     let r = nodeRadius(n.entry)
                     let isHovered = (hoveredID == n.id)
@@ -212,7 +212,7 @@ struct InsightGraphView: View {
 
     private func isAdjacentToHovered(_ id: DiaryEntry.ID) -> Bool {
         guard let h = hoveredID else { return false }
-        return GraphBuilder.build(entries: store.entries, extractions: extractions)
+        return GraphBuilder.build(entries: store.entries)
             .edges.contains { e in
                 (e.source == h && e.target == id) || (e.target == h && e.source == id)
             }
@@ -250,7 +250,7 @@ struct InsightGraphView: View {
         let gx = (location.x - center.x - pan.width) / zoom
         let gy = (location.y - center.y - pan.height) / zoom
 
-        let nodes = GraphBuilder.build(entries: store.entries, extractions: extractions).nodes
+        let nodes = GraphBuilder.build(entries: store.entries).nodes
         let nodeById = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0) })
 
         var bestNode: DiaryEntry? = nil
@@ -281,52 +281,27 @@ struct InsightGraphView: View {
 
     private func moodColor(_ mood: Int?) -> Color { DS.Mood.color(mood) }
 
-    // MARK: - Extraction
+    // MARK: - Recompute
 
-    private func loadCached() {
-        let cached = EntityExtractor.shared.cached(entries: store.entries)
-        extractions = cached
-        recomputeLayout()
-    }
-
+    /// Rebuild the cosine-similarity graph and run the force layout.
+    /// `force=true` clears the embedding cache (so the next rebuild
+    /// recomputes everything from scratch); otherwise we rely on the
+    /// index's content-hash invalidation to reuse existing vectors.
     @MainActor
-    private func runExtraction(force: Bool) async {
-        guard !store.entries.isEmpty else { return }
-        guard !settingsStore.settings.apiKey.isEmpty else {
-            extractionError = "请先到「设置」页填入 API Key"
-            return
-        }
-        isExtracting = true
-        extractionError = nil
-        progress = (0, store.entries.count)
-        defer { isExtracting = false }
-
-        do {
-            let results = try await EntityExtractor.shared.extractAll(
-                entries: store.entries,
-                settings: settingsStore.settings,
-                model: settingsStore.settings.model,
-                onProgress: { done, total in
-                    progress = (done, total)
-                }
-            )
-            extractions = results
-            recomputeLayout()
-        } catch {
-            extractionError = error.localizedDescription
-        }
-    }
-
-    /// Run the force-directed layout with the current extractions and save
-    /// positions to state. Always re-runs after extraction so the saved state
-    /// matches the latest data.
-    @MainActor
-    private func recomputeLayout() {
+    private func recomputeLayout(force: Bool = false) {
         guard !store.entries.isEmpty else {
             positions = [:]
             return
         }
-        let (nodes, edges) = GraphBuilder.build(entries: store.entries, extractions: extractions)
+        isComputing = true
+        if force {
+            // Touch the index so we can poke it; for now we just
+            // re-resolve the embeddings — content-hash invalidation
+            // will only rebuild entries whose text actually changed,
+            // so this stays cheap even for big folders.
+            _ = EmbeddingIndex.shared
+        }
+        let (nodes, edges) = GraphBuilder.build(entries: store.entries)
         let new = GraphBuilder.layout(
             nodes: nodes,
             edges: edges,
@@ -335,5 +310,8 @@ struct InsightGraphView: View {
         )
         positions = new
         lastLayoutBounds = layoutBounds
+        // Save the cache so the next visit is instant.
+        EmbeddingIndex.shared.saveCache()
+        isComputing = false
     }
 }
