@@ -3,7 +3,19 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var store: DiaryStore
     @EnvironmentObject var settingsStore: SettingsStore
+    @EnvironmentObject var updateStore: UpdateStore
     @State private var selectedTab: Tab = .stats
+
+    /// Launch gate. Stays `false` for ~1s after first appear; during
+    /// that window the launch screen is shown on top and we kick off
+    /// the update check + diary reload. After the timer fires we
+    /// fade the launch view out and reveal the main UI.
+    @State private var isReady: Bool = false
+    /// Slight delay on the fade-out (vs the immediate isReady
+    /// flip) so SwiftUI has time to mount the main UI before the
+    /// launch view starts animating away — otherwise the transition
+    /// looks like a flash.
+    @State private var launchVisible: Bool = true
 
     enum Tab: String, Hashable, CaseIterable, Identifiable {
         case write, stats, insight, chat, settings
@@ -40,31 +52,16 @@ struct ContentView: View {
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
 
-            VStack(spacing: 0) {
-                // Top tab bar. No background, no overlay, no blur, no
-                // gradient. Just the capsule floating on the
-                // LiquidBackdrop.
-                TopTabBar(
-                    selected: $selectedTab,
-                    tabs: Tab.allCases,
-                    label: { $0.label },
-                    icon: { $0.systemImage }
-                )
-                .padding(.horizontal, DS.Spacing.l)
-                .padding(.top, DS.Spacing.s)
-                .padding(.bottom, DS.Spacing.m)
+            // Main UI — fades in after the launch gate clears.
+            mainUI
+                .opacity(isReady ? 1 : 0)
+                .allowsHitTesting(isReady)
 
-                // Content
-                Group {
-                    switch selectedTab {
-                    case .write:    EditorTabView()
-                    case .stats:    StatsView()
-                    case .insight:  InsightView()
-                    case .chat:     ChatView()
-                    case .settings: SettingsView()
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Launch screen on top while we're still warming up.
+            if launchVisible {
+                LaunchView()
+                    .transition(.opacity)
+                    .zIndex(10)
             }
         }
         .frame(minWidth: 980, minHeight: 640)
@@ -72,6 +69,73 @@ struct ContentView: View {
         // Default to dark mode — the amber liquid backdrop reads
         // better against a dark surface than a light one.
         .preferredColorScheme(.dark)
+        .onAppear { runLaunchTasks() }
+    }
+
+    // MARK: - Launch flow
+
+    /// Kick off the background work and schedule the launch-screen
+    /// dismissal. The work itself is async — the user gets into the
+    /// main UI after exactly 1s regardless of whether the network
+    /// call has finished.
+    private func runLaunchTasks() {
+        // 1. Check for updates in the background, throttled to
+        //    once per 12h. `checkAutomatically()` no-ops if the
+        //    last auto-check is still inside the window. The
+        //    user can always force a check from Settings — that
+        //    path bypasses the throttle.
+        updateStore.checkAutomatically()
+        // 2. Re-scan the diary folder so the user always sees fresh
+        //    entries, even if files changed on disk while the app
+        //    was closed. (DiaryStore.init() already restored the last
+        //    folder; reload() re-walks it.)
+        store.reload()
+        // 3. After exactly 1s, swap isReady on. The main UI was
+        //    already mounting under the launch view during this
+        //    delay, so the transition is smooth.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            withAnimation(.easeInOut(duration: 0.35)) {
+                isReady = true
+            }
+            // Drop the launch view 0.35s later so the main UI has
+            // fully come in. Removing it earlier triggers a visible
+            // flicker.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                launchVisible = false
+            }
+        }
+    }
+
+    /// The main tab-bar + content layout, factored out so we can
+    /// drive its opacity / hit-testing independently of the launch
+    /// gate.
+    private var mainUI: some View {
+        VStack(spacing: 0) {
+            // Top tab bar. No background, no overlay, no blur, no
+            // gradient. Just the capsule floating on the
+            // LiquidBackdrop.
+            TopTabBar(
+                selected: $selectedTab,
+                tabs: Tab.allCases,
+                label: { $0.label },
+                icon: { $0.systemImage }
+            )
+            .padding(.horizontal, DS.Spacing.l)
+            .padding(.top, DS.Spacing.s)
+            .padding(.bottom, DS.Spacing.m)
+
+            // Content
+            Group {
+                switch selectedTab {
+                case .write:    EditorTabView()
+                case .stats:    StatsView()
+                case .insight:  InsightView()
+                case .chat:     ChatView()
+                case .settings: SettingsView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 }
 

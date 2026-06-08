@@ -3,14 +3,10 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var store: DiaryStore
     @EnvironmentObject var settingsStore: SettingsStore
+    @EnvironmentObject var updateStore: UpdateStore
     @State private var testing: Bool = false
     @State private var testResult: String?
     @State private var showApiKey: Bool = false
-
-    // Update check state. `nil` = not yet checked this session.
-    // Non-nil = a Status (checking, upToDate, updateAvailable, error).
-    @State private var updateStatus: UpdateChecker.Status?
-    @State private var updateTask: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
@@ -166,17 +162,20 @@ struct SettingsView: View {
     // MARK: - Update
 
     private var updateRows: some View {
+        // State is held in the shared `UpdateStore` so the launch
+        // screen can kick off the check on startup and the result
+        // is already populated by the time the user lands here.
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center) {
                 Text(updateStatusText)
                     .font(.callout)
                     .foregroundStyle(updateStatusColor)
                 Spacer()
-                if case .checking = updateStatus {
+                if updateStore.isChecking {
                     ProgressView().controlSize(.small)
                 } else {
                     Button {
-                        runUpdateCheck()
+                        updateStore.check()
                     } label: {
                         Label("检查更新", systemImage: "arrow.triangle.2.circlepath")
                             .font(.callout)
@@ -185,8 +184,7 @@ struct SettingsView: View {
                     .tint(DS.Brand.amber)
                 }
             }
-            // Inline link row, only when there's a newer release
-            if case .updateAvailable(_, let latest, let url) = updateStatus {
+            if case .updateAvailable(_, let latest, let url) = updateStore.status {
                 HStack {
                     Text("新版本 v\(latest) 已发布")
                         .font(.callout)
@@ -198,19 +196,34 @@ struct SettingsView: View {
                     }
                 }
             }
+            // Sub-line: when did the last *automatic* check happen?
+            // Manual checks bypass the 12h throttle, so this
+            // timestamp only reflects what the launch screen did.
+            if let when = updateStore.lastAutomaticCheckDescription {
+                Text(when)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         }
     }
 
     private var updateStatusText: String {
-        switch updateStatus {
+        switch updateStore.status {
         case .none:
-            return "当前版本 v\(UpdateChecker.currentVersion)"
+            return "当前版本 v\(updateStore.currentVersion)"
         case .checking:
             return "正在检查…"
         case .upToDate(let current, let latest):
-            // Show the version we compared against so the user
-            // knows what "up to date" means in concrete terms.
-            return "已是最新（v\(current) ≥ v\(latest)）"
+            // Two "up to date" sub-cases that mean different things:
+            //   current == latest  →  everything is in sync
+            //   current  > latest  →  local is *ahead* of what's
+            //                         published (newer dev build,
+            //                         or release not pushed yet)
+            if current == latest {
+                return "已是最新 v\(current)"
+            } else {
+                return "本地 v\(current) 比最新发布 v\(latest) 更新"
+            }
         case .updateAvailable(let current, let latest, _):
             return "v\(current) → v\(latest) 可更新"
         case .error(let msg):
@@ -219,24 +232,12 @@ struct SettingsView: View {
     }
 
     private var updateStatusColor: Color {
-        switch updateStatus {
-        case .none:           return .secondary
-        case .checking:       return .secondary
-        case .upToDate:       return .green
+        switch updateStore.status {
+        case .none:            return .secondary
+        case .checking:        return .secondary
+        case .upToDate:        return .green
         case .updateAvailable: return DS.Brand.amber
-        case .error:          return .secondary
-        }
-    }
-
-    private func runUpdateCheck() {
-        updateTask?.cancel()
-        updateStatus = .checking
-        updateTask = Task {
-            let result = await UpdateChecker.check()
-            // Guard against a cancellation that arrived after the
-            // network call completed — in that case drop the result.
-            if Task.isCancelled { return }
-            updateStatus = result
+        case .error:           return .secondary
         }
     }
 
