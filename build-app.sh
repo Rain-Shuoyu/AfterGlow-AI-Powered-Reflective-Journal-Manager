@@ -89,7 +89,31 @@ fi
 echo "==> ad-hoc codesign"
 codesign --force --sign - --timestamp=none "$OUT" 2>/dev/null || true
 
+# ── .dmg packaging ─────────────────────────────────────────────────
+# Most users get the app by downloading a .dmg and dragging the .app
+# into /Applications. We build a small read-only DMG with:
+#   - ShiGuang.app
+#   - an /Applications symlink so "drag to Applications" works
+# Files are read-write during staging, then UDZO-compressed at the end.
+DMG_BASE="$ROOT/build/ShiGuang-${SHORT_VERSION}"
+DMG_STAGE="$(mktemp -d -t shiguang-dmg)"
+trap 'rm -rf "$DMG_STAGE"' EXIT
+mkdir -p "$DMG_STAGE"
+cp -R "$OUT" "$DMG_STAGE/"
+ln -s /Applications "$DMG_STAGE/Applications"
+# Custom volume icon would require a .icns; the default is fine for now.
+hdiutil create \
+    -volname "ShiGuang ${SHORT_VERSION}" \
+    -srcfolder "$DMG_STAGE" \
+    -ov \
+    -format UDZO \
+    "${DMG_BASE}.dmg" 2>&1 | tail -2
+rm -rf "$DMG_STAGE"
+trap - EXIT
+echo "==> packaged ${DMG_BASE}.dmg"
+
 echo ""
 echo "✅ Built $OUT"
 echo "   Open with:  open '$OUT'"
 echo "   Or drag to /Applications"
+echo "   Distribute:  ${DMG_BASE}.dmg"
