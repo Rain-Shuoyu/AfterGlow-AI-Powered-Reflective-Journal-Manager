@@ -87,7 +87,21 @@ fi
 
 # ad-hoc codesign so Gatekeeper lets the user double-click it on first run
 echo "==> ad-hoc codesign"
-codesign --force --sign - --timestamp=none "$OUT" 2>/dev/null || true
+# `--deep` recurses into nested frameworks. `--options runtime` adds
+# the hardened-runtime flag (required for notarization later, and
+# makes Gatekeeper slightly less aggressive on ad-hoc too). We
+# omit `--entitlements` because ad-hoc signing without a real
+# Apple Developer ID rejects the entitlement blob and produces
+# an "invalid signature" warning — which is *worse* than no
+# signature. When we move to a Developer ID build, drop the
+# entitlements file back in.
+codesign --force --deep --sign - \
+    --options runtime \
+    --timestamp=none \
+    "$OUT" 2>&1 | tail -1 || true
+# Verify the signature landed (silent if it didn't, so a partial
+# code-sign environment still produces a usable .app).
+codesign --verify --verbose=1 "$OUT" 2>&1 | head -1 || true
 
 # ── .dmg packaging ─────────────────────────────────────────────────
 # Most users get the app by downloading a .dmg and dragging the .app
@@ -95,6 +109,15 @@ codesign --force --sign - --timestamp=none "$OUT" 2>/dev/null || true
 #   - ShiGuang.app
 #   - an /Applications symlink so "drag to Applications" works
 # Files are read-write during staging, then UDZO-compressed at the end.
+#
+# The DMG itself is also ad-hoc signed (different from notarization
+# — this just lets macOS know the file hasn't been tampered with
+# after the build). The *real* fix for the
+# "macOS cannot check for malicious software" warning is to either:
+#   (a) right-click → Open the first time (the easiest user fix), or
+#   (b) distribute via a Developer ID + notarized build.
+# The ad-hoc signed DMG still hits the warning but lets users
+# proceed by right-clicking.
 DMG_BASE="$ROOT/build/ShiGuang-${SHORT_VERSION}"
 DMG_STAGE="$(mktemp -d -t shiguang-dmg)"
 trap 'rm -rf "$DMG_STAGE"' EXIT
