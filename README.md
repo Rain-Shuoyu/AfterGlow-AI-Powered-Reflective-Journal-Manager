@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases/tag/v0.2.0">
-    <img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-v0.2.0-FFB95C?style=for-the-badge&logo=apple&logoColor=white" alt="下载 v0.2.0">
+  <a href="https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases/tag/v0.3.0">
+    <img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-v0.3.0-FFB95C?style=for-the-badge&logo=apple&logoColor=white" alt="下载 v0.3.0">
   </a>
   &nbsp;
   <a href="https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases">
@@ -19,7 +19,7 @@
   </a>
 </p>
 
-> **v0.2.0 新增 🌙 今日签 + ✍️ 现在写一封** — 自我探索 / 写作疗愈。
+> **v0.3.0 新增 🕯 周年回响 + 🪞 镜像回放** — 让时间自己说话。**0 LLM token**。
 
 ---
 
@@ -64,6 +64,35 @@ v0.2 的核心转向：从"日记 + AI 问答"升级到"**把写作本身变成�
 所以流程是：选收信人 → AI 写 ~80 字开场白 + 收尾（10 秒）→ 完整编辑器打开，用户接着写 → 保存自动归档到今天日记，frontmatter `tags: [letter, scenario_id]`。
 
 可以随时点 "不，AI 帮不了，我自己来" 跳过 LLM 起头。
+
+---
+
+## ✨ v0.3 新功能：让时间自己说话
+
+v0.3 同样**不调 LLM**——两个新功能都是纯本地计算，复用现有 embedding 索引，0 token 成本。
+
+### 🕯 周年回响（时间纵深）
+
+每年的今天 / 明天 / 后天（6/15 ±1），启动 app 时**顶部 banner 自动出现**：「往年的今天，你写过 — 回看」。
+
+匹配你历史上同月同日的日记，**1 年前 / 2 年前 / 3 年前...**（max 5 年）。每篇只显示前 3 段，加 "打开完整日记" 跳转。banner ✕ 关掉今日；设置里可永久关闭。3 天去重，不会连续 3 天都弹。
+
+缺失的年份不强行编——如果你 1 年前没写、2 年前写了，banner 只展示有的那 1 篇。**留空比假装更尊重真实**。
+
+洞察 tab 头部的 "🕯 周年" 按钮可以**手动随时打开**，不受 ±1 天窗口限制。
+
+### 🪞 镜像回放（自我同一性的"啊哈"时刻）
+
+洞察 tab 头部新按钮 "🪞 镜像"。点开是 5-7 句**你自己写过的句子**，按时间顺序排列。
+
+- **多样性采样**（不是相似度采样！）：用 Apple 的 `NLEmbedding.simplifiedChinese` + 简单 MMR 算法（λ=0 = 纯多样性），保证 6 句不重复讲同一件事
+- **两种模式**：
+  - 🎲 **随机**（默认）— 从过去 180 天随机抽 8-12 篇，挑出最不像的 6 句
+  - 🏷 **主题**（可选）— 工作 / 感情 / 自我，embedding 检索最相关的 6 句
+- **0 LLM**：全部本地
+- **可复制** / **可换一组**：一键复制整段到剪贴板，或者立即重新采样
+
+读到 3 年前自己写的字，那种"原来我已经走了这么远"的感觉，是这个功能的核心价值。
 
 ---
 
@@ -221,6 +250,7 @@ LLM 看到的是 markdown 简化版（标题符去掉、链接保留文字、图
 
 ## 📦 版本
 
+- [v0.3.0](https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases/tag/v0.3.0) — 2026-06-15 · 🕯 周年回响 + 🪞 镜像回放
 - [v0.2.0](https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases/tag/v0.2.0) — 2026-06-15 · 🌙 今日签 + ✍️ 现在写一封
 - [v0.1](https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases/tag/v0.1) — 2026-06-08
 
@@ -228,9 +258,9 @@ LLM 看到的是 markdown 简化版（标题符去掉、链接保留文字、图
 
 - ~~🌙 今日签（每日仪式）~~ — ✅ v0.2.0
 - ~~✍️ 现在写一封（自我对话信）~~ — ✅ v0.2.0
-- 🪞 镜像回放（echo own words, no commentary）
+- ~~🕯 周年回响（1-year-ago today entry）~~ — ✅ v0.3.0
+- ~~🪞 镜像回放（echo own words, no commentary）~~ — ✅ v0.3.0
 - 🌧 情绪急救（one-line mood log on low-mood days）
-- 🕯 周年回响（1-year-ago today entry）
 - 📓 自我追问（LLM asks, user may answer）
 - 监听文件变化（自动刷新）
 - 导出周报 / 月报成 PDF
