@@ -6,6 +6,7 @@ struct InsightView: View {
     @EnvironmentObject var store: DiaryStore
     @EnvironmentObject var settingsStore: SettingsStore
     @EnvironmentObject var practiceStore: DailyPracticeStore
+    @EnvironmentObject var anniversaryStore: AnniversaryStore
 
     enum Mode: String, CaseIterable, Identifiable {
         case timeline = "时间线"
@@ -26,19 +27,45 @@ struct InsightView: View {
     @State private var flashbackEntry: DiaryEntry?
     /// When true, the "🌙 今日签" sheet is shown.
     @State private var showDailyPractice: Bool = false
+    /// When true, the "🕯 周年回响" sheet is shown.
+    @State private var showAnniversary: Bool = false
+    /// When true, the "🪞 镜像" sheet is shown.
+    @State private var showMirror: Bool = false
+
+    /// Cached list of anniversary entries for today. Recomputed
+    /// when `store.entries` changes (via .onChange).
+    @State private var anniversaryEntries: [AnniversaryEntry] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Top-left view switcher + 回溯 + 今日签
+            // Top-left view switcher + 回溯 + 今日签 + 周年
             HStack(alignment: .center, spacing: DS.Spacing.m) {
                 ModePicker(mode: $mode)
                 Spacer()
                 dailyPracticeButton
                 flashbackButton
+                mirrorButton
+                anniversaryButton
             }
             .padding(.horizontal, DS.Spacing.xl)
             .padding(.top, DS.Spacing.l)
             .padding(.bottom, DS.Spacing.m)
+
+            // Optional anniversary banner
+            if anniversaryStore.shouldShowBanner(today: Date(), entries: store.entries) {
+                AnniversaryBannerView(
+                    onTap: {
+                        anniversaryStore.markShown()
+                        showAnniversary = true
+                    },
+                    onDismissToday: {
+                        anniversaryStore.dismissForToday()
+                    }
+                )
+                .padding(.horizontal, DS.Spacing.xl)
+                .padding(.bottom, DS.Spacing.m)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
 
             // Content
             Group {
@@ -64,9 +91,27 @@ struct InsightView: View {
                 .environmentObject(practiceStore)
                 .environmentObject(store)
         }
+        .sheet(isPresented: $showAnniversary) {
+            AnniversarySheet(entries: anniversaryEntries)
+                .environmentObject(store)
+        }
+        .sheet(isPresented: $showMirror) {
+            MirrorSheet()
+                .environmentObject(store)
+        }
+        .onAppear {
+            recomputeAnniversaries()
+        }
+        .onChange(of: store.entries) { _, _ in
+            recomputeAnniversaries()
+        }
         // The sub-views own their own headers; make sure no top inset lingers.
         .navigationTitle("")
         .toolbar(.hidden)
+    }
+
+    private func recomputeAnniversaries() {
+        anniversaryEntries = AnniversaryFinder.find(in: store.entries)
     }
 
     /// "🪄 回溯" button in the Insight header. Picks a random
@@ -142,6 +187,70 @@ struct InsightView: View {
         .help(practiceStore.isTodayDone
               ? "今天的内省已经完成，可以再看看"
               : "今天的小内省：1-2 分钟")
+    }
+
+    /// "🕯 周年" button — opens the anniversary sheet
+    /// manually, even outside the ±1 day window. Disabled when
+    /// there are no matching entries.
+    private var anniversaryButton: some View {
+        Button {
+            showAnniversary = true
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "flame.fill")
+                Text("周年")
+            }
+            .font(.callout.weight(.medium))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(DS.Brand.amber.opacity(0.16))
+            }
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(DS.Brand.amber.opacity(0.5), lineWidth: 0.8)
+            }
+            .foregroundStyle(DS.Brand.amberDeep)
+        }
+        .buttonStyle(.plain)
+        .disabled(anniversaryEntries.isEmpty)
+        .opacity(anniversaryEntries.isEmpty ? 0.5 : 1)
+        .help(anniversaryEntries.isEmpty
+              ? "往年的今天还没有日记"
+              : "往年的今天你写过 \(anniversaryEntries.count) 篇")
+    }
+
+    /// "🪞 镜像" button — opens the mirror reflection sheet.
+    /// Disabled when there are fewer than 5 entries (the sampler
+    /// needs at least that many to produce a meaningful set).
+    private var mirrorButton: some View {
+        Button {
+            showMirror = true
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "circle.dashed")
+                Text("镜像")
+            }
+            .font(.callout.weight(.medium))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(DS.Brand.amber.opacity(0.16))
+            }
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(DS.Brand.amber.opacity(0.5), lineWidth: 0.8)
+            }
+            .foregroundStyle(DS.Brand.amberDeep)
+        }
+        .buttonStyle(.plain)
+        .disabled(store.entries.count < 5)
+        .opacity(store.entries.count < 5 ? 0.5 : 1)
+        .help(store.entries.count < 5
+              ? "至少写 5 篇之后才能回看"
+              : "从你过去的日记里挑 5-7 句")
     }
 }
 

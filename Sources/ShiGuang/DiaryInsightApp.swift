@@ -7,6 +7,7 @@ struct ShiGuangApp: App {
     @StateObject private var settingsStore = SettingsStore()
     @StateObject private var updateStore = UpdateStore()
     @StateObject private var practiceStore = DailyPracticeStore()
+    @StateObject private var anniversaryStore = AnniversaryStore()
 
     init() {
         // CLI sanity-check mode: `DiaryInsight --sanity-check <folder>`
@@ -29,6 +30,7 @@ struct ShiGuangApp: App {
                 .environmentObject(settingsStore)
                 .environmentObject(updateStore)
                 .environmentObject(practiceStore)
+                .environmentObject(anniversaryStore)
                 // DiaryStore.init() already restores the last folder from
                 // UserDefaults — no manual onAppear wiring needed.
         }
