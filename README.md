@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases/tag/v0.3.0">
-    <img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-v0.3.0-FFB95C?style=for-the-badge&logo=apple&logoColor=white" alt="下载 v0.3.0">
+  <a href="https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases/tag/v0.4.0">
+    <img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-v0.4.0-FFB95C?style=for-the-badge&logo=apple&logoColor=white" alt="下载 v0.4.0">
   </a>
   &nbsp;
   <a href="https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases">
@@ -19,7 +19,7 @@
   </a>
 </p>
 
-> **v0.3.0 新增 🕯 周年回响 + 🪞 镜像回放** — 让时间自己说话。**0 LLM token**。
+> **v0.4.0 新增 🌧 情绪急救 + 📓 自我追问** — 真正能干预情绪的两层功能。
 
 ---
 
@@ -93,6 +93,46 @@ v0.3 同样**不调 LLM**——两个新功能都是纯本地计算，复用现�
 - **可复制** / **可换一组**：一键复制整段到剪贴板，或者立即重新采样
 
 读到 3 年前自己写的字，那种"原来我已经走了这么远"的感觉，是这个功能的核心价值。
+
+---
+
+## ✨ v0.4 新功能：真正能干预情绪
+
+v0.4 是 4 个 sprint 计划里**疗愈价值最高**的一波——两个新功能都有 LLM 主动调用（不是被动等用户来问），能真正"看见"用户的情绪低谷。
+
+### 🌧 情绪急救（两层级）
+
+**层 1：1 行情绪记录**（轻量入口，3 处都有）
+- 洞察 tab 头部 / 今日签 sheet 顶部 / 写作 tab 顶部
+- 4 个 emoji（😔 😐 🙂 😊）+ 60 字内文本
+- **不调 LLM**，存到当天 frontmatter `mood_quick: "😔 撑了一天"`
+- 不想打分？没问题，emoji 替代 5 档 mood scale
+
+**层 2：情绪急救干预**（真的会"看见"你）
+- **检测**：连续 3+ 天 `mood_quick ≤ 2` **或** frontmatter.mood ≤ 2，**且是连续 3 天**（不打断 missing day）
+- **关键词触发**：近 7 天含 `撑不住 / 想消失 / 没用 / 崩溃 / 熬不下去` 升级到 `.intervene`
+- **横幅**：洞察 tab 顶部 + **冷蓝色调**（区别于琥珀色的"好事情"banner）
+- **sheet 内容**：6-12 个月前同情绪区间的旧日记 1-2 篇，**0 LLM commentary**——只是把"那时候的你"重新摆在你面前
+- **永远有 X** + **5 次"我不想再看到这个"自动永久关闭**：尊重用户的边界
+- **可手动打开**：洞察 tab 头部 `🌧 急救` 按钮，但 disabled 当 signal = .none
+
+**核心原则**：不替代 LLM 建议，不替你解读，不给鸡汤。**只是"你之前走过这段路"**。
+
+### 📓 自我追问（LLM 帮你想）
+
+写作 tab 顶部多了一个 `📓 待回答` 卡片：
+
+- **3 类问题**：
+  - ❓ **悬而未决**：「你 3 个月前想做那个决定，后来呢？」
+  - 📖 **自我定义**：「你在 6 篇日记里都提到"自由"。对你来说自由是什么？」
+  - 💗 **情绪主题**：「最近反复出现"疲惫"。什么时候开始的？」
+- **算法**：把最近 30 篇日记（frontmatter + 前 2 段）发给 LLM，**强制 JSON 输出**，解析为问题列表
+- **30 天缓存**：`~/Library/Application Support/ShiGuang/self-questions.json`
+- **"换一批"**：手动强制重新跑（约 30s）
+- **"→ 写一写"**：打开 EditorView 预填问题——用户自己写答案
+- **"看那天"**：在悬而未决问题里，跳转到那篇源头日记
+
+**核心原则**：LLM 只是把"你说过的话"重新组织成问题。**不替你思考**。
 
 ---
 
@@ -250,6 +290,7 @@ LLM 看到的是 markdown 简化版（标题符去掉、链接保留文字、图
 
 ## 📦 版本
 
+- [v0.4.0](https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases/tag/v0.4.0) — 2026-06-15 · 🌧 情绪急救 + 📓 自我追问
 - [v0.3.0](https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases/tag/v0.3.0) — 2026-06-15 · 🕯 周年回响 + 🪞 镜像回放
 - [v0.2.0](https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases/tag/v0.2.0) — 2026-06-15 · 🌙 今日签 + ✍️ 现在写一封
 - [v0.1](https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases/tag/v0.1) — 2026-06-08
@@ -260,8 +301,10 @@ LLM 看到的是 markdown 简化版（标题符去掉、链接保留文字、图
 - ~~✍️ 现在写一封（自我对话信）~~ — ✅ v0.2.0
 - ~~🕯 周年回响（1-year-ago today entry）~~ — ✅ v0.3.0
 - ~~🪞 镜像回放（echo own words, no commentary）~~ — ✅ v0.3.0
-- 🌧 情绪急救（one-line mood log on low-mood days）
-- 📓 自我追问（LLM asks, user may answer）
+- ~~🌧 情绪急救（one-line mood log on low-mood days）~~ — ✅ v0.4.0
+- ~~📓 自我追问（LLM asks, user may answer）~~ — ✅ v0.4.0
+- Streak / 仪式感 UI（数字徽章 / 圆环）
+- Letter 检索（按 `tags: [letter, ...]` 过滤）
 - 监听文件变化（自动刷新）
 - 导出周报 / 月报成 PDF
 - 多日记本（多目录切换）
