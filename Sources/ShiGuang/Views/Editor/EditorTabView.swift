@@ -10,11 +10,16 @@ import SwiftUI
 struct EditorTabView: View {
     @EnvironmentObject var store: DiaryStore
     @EnvironmentObject var settingsStore: SettingsStore
+    /// `nil` until first onAppear, then a real service. We
+    /// can't construct the service in `init` because it needs
+    /// the env-object settings store.
+    @State private var questionService: SelfQuestionService?
 
     @State private var sheetItem: EditorSheetItem? = nil
     @State private var confirmDelete: DiaryEntry? = nil
     @State private var showTrash: Bool = false
     @State private var showLetterChoice: Bool = false
+    @State private var showMoodQuick: Bool = false
     /// When set, the letter-writing sheet is presented for this scenario.
     @State private var letterScenario: LetterPrompt.Scenario?
 
@@ -56,6 +61,15 @@ struct EditorTabView: View {
                     settingsStore: settingsStore
                 )
                 .environmentObject(store)
+            }
+            .sheet(isPresented: $showMoodQuick) {
+                MoodQuickSheet()
+                    .environmentObject(store)
+            }
+            .onAppear {
+                if questionService == nil {
+                    questionService = SelfQuestionService(settingsStore: settingsStore)
+                }
             }
     }
 
@@ -101,6 +115,16 @@ struct EditorTabView: View {
             letterCard
                 .padding(.horizontal, DS.Spacing.l)
                 .padding(.bottom, DS.Spacing.m)
+
+            moodQuickCard
+                .padding(.horizontal, DS.Spacing.l)
+                .padding(.bottom, DS.Spacing.m)
+
+            if let service = questionService {
+                SelfQuestionCard(service: service)
+                    .padding(.horizontal, DS.Spacing.l)
+                    .padding(.bottom, DS.Spacing.m)
+            }
 
             if store.entries.isEmpty {
                 emptyState
@@ -205,6 +229,69 @@ struct EditorTabView: View {
         .help("✍️ 现在写一封：5 种提示信，AI 帮你起头")
         .disabled(store.folderURL == nil)
         .opacity(store.folderURL == nil ? 0.5 : 1)
+    }
+
+    /// "🌧 1 行情绪" compact card. Sits below the letter
+    /// card. If the user has already logged today, show the
+    /// logged value as a static pill; otherwise prompt them to
+    /// record one.
+    private var moodQuickCard: some View {
+        Button {
+            showMoodQuick = true
+        } label: {
+            HStack(spacing: 10) {
+                Text(todayMoodQuick?.emoji ?? "🌧")
+                    .font(.system(size: 18))
+                if let mq = todayMoodQuick {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("今天: \(mq.text.isEmpty ? "已记" : mq.text)")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(.primary)
+                        Text("点击修改")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("1 行情绪")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(.primary)
+                        Text("用 1 秒钟记下现在感觉")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(12)
+            .background {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(.regularMaterial)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(
+                        todayMoodQuick != nil
+                            ? DS.Brand.amber.opacity(0.30)
+                            : Color.white.opacity(0.05),
+                        lineWidth: 0.5
+                    )
+            }
+        }
+        .buttonStyle(.plain)
+        .help("🌧 1 行情绪：4 个 emoji + 60 字内")
+    }
+
+    /// Today's logged mood_quick (if any). Used by the card to
+    /// show the "已记" pill state.
+    private var todayMoodQuick: MoodQuick? {
+        guard let entry = store.entries.first(where: {
+            Calendar.current.isDateInToday($0.date)
+        }) else { return nil }
+        return RescueDetector.parseMoodQuick(from: entry)
     }
 
     private var emptyState: some View {

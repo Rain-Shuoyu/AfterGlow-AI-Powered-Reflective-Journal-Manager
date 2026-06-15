@@ -7,6 +7,7 @@ struct InsightView: View {
     @EnvironmentObject var settingsStore: SettingsStore
     @EnvironmentObject var practiceStore: DailyPracticeStore
     @EnvironmentObject var anniversaryStore: AnniversaryStore
+    @EnvironmentObject var rescueStore: RescueStore
 
     enum Mode: String, CaseIterable, Identifiable {
         case timeline = "时间线"
@@ -31,6 +32,8 @@ struct InsightView: View {
     @State private var showAnniversary: Bool = false
     /// When true, the "🪞 镜像" sheet is shown.
     @State private var showMirror: Bool = false
+    /// When true, the "🌧 情绪急救" sheet is shown.
+    @State private var showRescue: Bool = false
 
     /// Cached list of anniversary entries for today. Recomputed
     /// when `store.entries` changes (via .onChange).
@@ -46,6 +49,7 @@ struct InsightView: View {
                 flashbackButton
                 mirrorButton
                 anniversaryButton
+                rescueButton
             }
             .padding(.horizontal, DS.Spacing.xl)
             .padding(.top, DS.Spacing.l)
@@ -60,6 +64,23 @@ struct InsightView: View {
                     },
                     onDismissToday: {
                         anniversaryStore.dismissForToday()
+                    }
+                )
+                .padding(.horizontal, DS.Spacing.xl)
+                .padding(.bottom, DS.Spacing.m)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
+            // Optional rescue banner
+            if rescueStore.shouldShowBanner(entries: store.entries) {
+                RescueBannerView(
+                    level: rescueStore.currentSignal(entries: store.entries).level,
+                    onTap: {
+                        rescueStore.markShown()
+                        showRescue = true
+                    },
+                    onDismissToday: {
+                        rescueStore.dismissForToday()
                     }
                 )
                 .padding(.horizontal, DS.Spacing.xl)
@@ -98,6 +119,11 @@ struct InsightView: View {
         .sheet(isPresented: $showMirror) {
             MirrorSheet()
                 .environmentObject(store)
+        }
+        .sheet(isPresented: $showRescue) {
+            RescueSheet(signal: rescueStore.currentSignal(entries: store.entries))
+                .environmentObject(store)
+                .environmentObject(rescueStore)
         }
         .onAppear {
             recomputeAnniversaries()
@@ -251,6 +277,38 @@ struct InsightView: View {
         .help(store.entries.count < 5
               ? "至少写 5 篇之后才能回看"
               : "从你过去的日记里挑 5-7 句")
+    }
+
+    /// "🌧 急救" button — manual rescue entry-point. Disabled
+    /// when the rescue signal isn't currently active, so the
+    /// user can't accidentally surface "you're not in distress"
+    /// content as if it were one. The signal + banner logic is
+    /// in `RescueStore.shouldShowBanner`.
+    private var rescueButton: some View {
+        Button {
+            showRescue = true
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "cloud.rain.fill")
+                Text("急救")
+            }
+            .font(.callout.weight(.medium))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(Color(red: 0.45, green: 0.55, blue: 0.65).opacity(0.18))
+            }
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(Color(red: 0.55, green: 0.70, blue: 0.85).opacity(0.5), lineWidth: 0.8)
+            }
+            .foregroundStyle(Color(red: 0.55, green: 0.70, blue: 0.85))
+        }
+        .buttonStyle(.plain)
+        .disabled(rescueStore.currentSignal(entries: store.entries).level == .none)
+        .opacity(rescueStore.currentSignal(entries: store.entries).level == .none ? 0.5 : 1)
+        .help("查看你之前是怎么走出低谷的")
     }
 }
 

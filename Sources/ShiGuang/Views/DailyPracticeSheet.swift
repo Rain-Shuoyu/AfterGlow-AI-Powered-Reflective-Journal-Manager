@@ -28,6 +28,7 @@ struct DailyPracticeSheet: View {
     @State private var answer: String = ""
     @State private var isSaving: Bool = false
     @State private var saveError: String?
+    @State private var showMoodQuick: Bool = false
 
     init() {
         // Pre-compute today's prompt so the sheet content is
@@ -39,6 +40,8 @@ struct DailyPracticeSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            Divider().opacity(0.3)
+            moodQuickBar
             Divider().opacity(0.3)
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
@@ -57,7 +60,7 @@ struct DailyPracticeSheet: View {
             Divider().opacity(0.3)
             footer
         }
-        .frame(width: 540, height: 540)
+        .frame(width: 540, height: 580)
         .background(
             ZStack {
                 Color(white: 0.07)
@@ -77,6 +80,10 @@ struct DailyPracticeSheet: View {
             if let existing = existingTodayAnswer, !existing.isEmpty {
                 answer = existing
             }
+        }
+        .sheet(isPresented: $showMoodQuick) {
+            MoodQuickSheet()
+                .environmentObject(diaryStore)
         }
     }
 
@@ -130,6 +137,66 @@ struct DailyPracticeSheet: View {
         f.locale = Locale(identifier: "zh_CN")
         f.dateFormat = "yyyy-MM-dd EEEE"
         return f.string(from: Date())
+    }
+
+    // MARK: - Mood quick bar (between header and prompt)
+
+    /// Compact "1 行情绪" trigger. If the user has already
+    /// logged one for today, show the logged value as a static
+    /// chip. Otherwise show a tappable prompt.
+    private var moodQuickBar: some View {
+        Group {
+            if let logged = todayMoodQuick {
+                HStack(spacing: 8) {
+                    Text(logged.emoji)
+                        .font(.system(size: 16))
+                    Text("今天: \(logged.text)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(1)
+                    Spacer()
+                    Button {
+                        showMoodQuick = true
+                    } label: {
+                        Text("改")
+                            .font(.system(size: 11))
+                            .foregroundStyle(DS.Brand.amber)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 10)
+            } else {
+                Button {
+                    showMoodQuick = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("🌧")
+                            .font(.system(size: 14))
+                        Text("先记一下现在感觉？")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.7))
+                        Spacer()
+                        Text("一句话就行")
+                            .font(.system(size: 11))
+                            .foregroundStyle(DS.Brand.amber)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(DS.Brand.amber)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 10)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var todayMoodQuick: MoodQuick? {
+        guard let entry = diaryStore.entries.first(where: {
+            Calendar.current.isDateInToday($0.date)
+        }) else { return nil }
+        return RescueDetector.parseMoodQuick(from: entry)
     }
 
     // MARK: - Prompt card

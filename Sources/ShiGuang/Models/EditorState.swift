@@ -83,4 +83,33 @@ struct EditorState: Equatable {
             isDirty: false
         )
     }
+
+    /// Pre-filled state for the "📓 待回答" flow. The body is
+    /// seeded with a callout block containing the question,
+    /// followed by a blank line for the user to write. The
+    /// `tags` carry the question id so the entry can be
+    /// linked back to the question that prompted it.
+    static func forQuestion(_ q: SelfQuestion) -> EditorState {
+        let body = "## 待回答：\(kindLabel(q.kind))\n\n> \(q.text)\n\n"
+        return EditorState(
+            date: Date(),
+            title: kindLabel(q.kind),
+            mood: nil,
+            moodLabel: "",
+            weather: "",
+            tags: ["self-question", q.id],
+            body: body,
+            editingURL: nil,
+            originalFilename: nil,
+            isDirty: false
+        )
+    }
+
+    private static func kindLabel(_ k: SelfQuestion.Kind) -> String {
+        switch k {
+        case .unresolved: return "悬而未决"
+        case .definition: return "自我定义"
+        case .emotion:    return "情绪主题"
+        }
+    }
 }
