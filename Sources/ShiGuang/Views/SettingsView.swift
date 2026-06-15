@@ -4,9 +4,15 @@ struct SettingsView: View {
     @EnvironmentObject var store: DiaryStore
     @EnvironmentObject var settingsStore: SettingsStore
     @EnvironmentObject var updateStore: UpdateStore
+    @EnvironmentObject var practiceStore: DailyPracticeStore
+    @EnvironmentObject var anniversaryStore: AnniversaryStore
+    @EnvironmentObject var rescueStore: RescueStore
     @State private var testing: Bool = false
     @State private var testResult: String?
     @State private var showApiKey: Bool = false
+    @State private var confirmResetStreaks: Bool = false
+    @State private var confirmToggleAnniversary: Bool = false
+    @State private var confirmToggleRescue: Bool = false
 
     var body: some View {
         ScrollView {
@@ -49,6 +55,14 @@ struct SettingsView: View {
                     subtitle: "可选，会拼到默认 prompt 之后"
                 ) {
                     systemPromptEditor
+                }
+
+                sectionCard(
+                    icon: "sparkles",
+                    title: "仪式感",
+                    subtitle: "每日签 / 周年 / 急救 的状态与控制"
+                ) {
+                    ritualRows
                 }
 
                 sectionCard(
@@ -415,6 +429,120 @@ struct SettingsView: View {
             }
             .buttonStyle(.bordered)
             .tint(.red)
+        }
+    }
+
+    // MARK: - 仪式感
+
+    /// "仪式感" settings — streak / banner toggles. All four
+    /// rows are toggles/buttons that drive the per-feature
+    /// stores directly. No LLM cost, no settings persisted in
+    /// `AppSettings` — they live in the per-feature UserDefaults
+    /// namespaces and are owned by their respective stores.
+    @ViewBuilder
+    private var ritualRows: some View {
+        // ── 今日签 streak ───────────────────────────────────
+        row {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("今日签")
+                    .foregroundStyle(.primary)
+                Text("当前 \(practiceStore.streak) 天 · 最长 \(practiceStore.longestStreak) 天 · 跳过不扣分")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+            Button(role: .destructive) {
+                confirmResetStreaks = true
+            } label: {
+                Text("重置 streak")
+                    .font(.caption)
+            }
+            .buttonStyle(.bordered)
+            .tint(.red)
+            .disabled(practiceStore.streak == 0 && practiceStore.longestStreak == 0)
+        }
+        Divider().opacity(0.3)
+
+        // ── 周年 banner ─────────────────────────────────────
+        row {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("周年回响 banner")
+                    .foregroundStyle(.primary)
+                Text(anniversaryStore.isUserDisabled
+                     ? "已关闭。往年的今天不会再主动提醒。"
+                     : "6/15 ±1 天内自动出现。可关闭。")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+            Toggle("", isOn: Binding(
+                get: { !anniversaryStore.isUserDisabled },
+                set: { newValue in
+                    if !newValue {
+                        // Going from on→off, ask first.
+                        confirmToggleAnniversary = true
+                    } else {
+                        anniversaryStore.setUserDisabled(false)
+                    }
+                }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .labelsHidden()
+        }
+        Divider().opacity(0.3)
+
+        // ── 急救 banner ──────────────────────────────────────
+        row {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("情绪急救 banner")
+                    .foregroundStyle(.primary)
+                Text(rescueStore.isUserDisabled
+                     ? "已关闭。连续 3 天情绪低时不会再主动浮现。"
+                     : "检测到连续 3 天情绪低 + 关键词时浮现。可关闭。")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+            Toggle("", isOn: Binding(
+                get: { !rescueStore.isUserDisabled },
+                set: { newValue in
+                    if !newValue {
+                        confirmToggleRescue = true
+                    } else {
+                        rescueStore.setUserDisabled(false)
+                    }
+                }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .labelsHidden()
+        }
+
+        // ── Confirms ─────────────────────────────────────────
+        .alert("重置今日签 streak？", isPresented: $confirmResetStreaks) {
+            Button("取消", role: .cancel) {}
+            Button("重置", role: .destructive) {
+                practiceStore.resetStreaks()
+            }
+        } message: {
+            Text("当前连续天数和最长记录都会清零。不可撤销。")
+        }
+        .alert("关闭周年 banner？", isPresented: $confirmToggleAnniversary) {
+            Button("取消", role: .cancel) {}
+            Button("关闭", role: .destructive) {
+                anniversaryStore.setUserDisabled(true)
+            }
+        } message: {
+            Text("你可以在这个开关处随时重新打开。")
+        }
+        .alert("关闭情绪急救 banner？", isPresented: $confirmToggleRescue) {
+            Button("取消", role: .cancel) {}
+            Button("关闭", role: .destructive) {
+                rescueStore.setUserDisabled(true)
+            }
+        } message: {
+            Text("你可以在这个开关处随时重新打开。")
         }
     }
 

@@ -64,7 +64,8 @@ struct InsightView: View {
                     },
                     onDismissToday: {
                         anniversaryStore.dismissForToday()
-                    }
+                    },
+                    yearsAgo: anniversaryEntries.map { $0.yearsAgo }
                 )
                 .padding(.horizontal, DS.Spacing.xl)
                 .padding(.bottom, DS.Spacing.m)
@@ -195,6 +196,9 @@ struct InsightView: View {
                       ? "checkmark.seal.fill"
                       : "moon.stars.fill")
                 Text("今日签")
+                if let badge = streakBadgeText {
+                    streakBadge(badge)
+                }
             }
             .font(.callout.weight(.medium))
             .padding(.horizontal, 12)
@@ -211,8 +215,48 @@ struct InsightView: View {
         }
         .buttonStyle(.plain)
         .help(practiceStore.isTodayDone
-              ? "今天的内省已经完成，可以再看看"
-              : "今天的小内省：1-2 分钟")
+              ? "今天的内省已经完成 · \(streakHelpText)"
+              : "今天的小内省：1-2 分钟 · \(streakHelpText)")
+    }
+
+    /// Streak text shown next to the "今日签" label. Only
+    /// appears for streaks ≥ 3 days (gentle — no pressure for
+    /// first-timers). Format:
+    ///   - "🔥 7" when today is done and streak ≥ 3
+    ///   - "7" when today not done but streak alive
+    ///   - nil otherwise
+    private var streakBadgeText: String? {
+        let s = practiceStore.streak
+        guard s >= 3 else { return nil }
+        if practiceStore.isTodayDone {
+            return "🔥 \(s)"
+        }
+        return "\(s)"
+    }
+
+    private var streakHelpText: String {
+        let s = practiceStore.streak
+        let longest = practiceStore.longestStreak
+        if s == 0 {
+            return "从今天开始你的 streak"
+        }
+        if s >= longest {
+            return "连续 \(s) 天 · 新纪录"
+        }
+        return "连续 \(s) 天 · 最长 \(longest) 天"
+    }
+
+    /// Tiny pill badge for the streak number. Slightly more
+    /// saturated than the button itself so it pops.
+    private func streakBadge(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .foregroundStyle(DS.Brand.amberDeep)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1.5)
+            .background(
+                Capsule().fill(DS.Brand.amber.opacity(0.45))
+            )
     }
 
     /// "🕯 周年" button — opens the anniversary sheet
@@ -225,6 +269,16 @@ struct InsightView: View {
             HStack(spacing: 5) {
                 Image(systemName: "flame.fill")
                 Text("周年")
+                if !anniversaryEntries.isEmpty {
+                    Text("\(anniversaryEntries.count)")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(DS.Brand.amberDeep)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1.5)
+                        .background(
+                            Capsule().fill(DS.Brand.amber.opacity(0.45))
+                        )
+                }
             }
             .font(.callout.weight(.medium))
             .padding(.horizontal, 12)

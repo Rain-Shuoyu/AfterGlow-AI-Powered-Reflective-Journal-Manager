@@ -112,6 +112,22 @@ final class DailyPracticeStore: ObservableObject {
         d.set(todayPrompt.id, forKey: Self.lastDonePromptKey)
     }
 
+    /// Reset all streak counters + last-done state. Used by
+    /// the Settings → 仪式感 → "重置 streak" button. This is the
+    /// only way the user can clear their streak without
+    /// reinstalling the app.
+    func resetStreaks() {
+        streak = 0
+        longestStreak = 0
+        lastDoneDate = nil
+        lastDonePromptId = nil
+        let d = UserDefaults.standard
+        d.set(0, forKey: Self.streakKey)
+        d.set(0, forKey: Self.longestStreakKey)
+        d.removeObject(forKey: Self.lastDoneDateKey)
+        d.removeObject(forKey: Self.lastDonePromptKey)
+    }
+
     private func prevDonePromptIdMatchesToday() -> Bool {
         lastDonePromptId == todayPrompt.id
     }
