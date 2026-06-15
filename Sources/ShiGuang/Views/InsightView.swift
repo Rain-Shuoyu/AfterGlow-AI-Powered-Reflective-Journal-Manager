@@ -5,6 +5,7 @@ import SwiftUI
 struct InsightView: View {
     @EnvironmentObject var store: DiaryStore
     @EnvironmentObject var settingsStore: SettingsStore
+    @EnvironmentObject var practiceStore: DailyPracticeStore
 
     enum Mode: String, CaseIterable, Identifiable {
         case timeline = "时间线"
@@ -23,13 +24,16 @@ struct InsightView: View {
     @State private var selectedEntry: DiaryEntry?
     /// When non-nil, the "回溯" sheet is shown for this entry.
     @State private var flashbackEntry: DiaryEntry?
+    /// When true, the "🌙 今日签" sheet is shown.
+    @State private var showDailyPractice: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Top-left view switcher + 回溯
+            // Top-left view switcher + 回溯 + 今日签
             HStack(alignment: .center, spacing: DS.Spacing.m) {
                 ModePicker(mode: $mode)
                 Spacer()
+                dailyPracticeButton
                 flashbackButton
             }
             .padding(.horizontal, DS.Spacing.xl)
@@ -54,6 +58,11 @@ struct InsightView: View {
         .sheet(item: $flashbackEntry) { entry in
             FlashbackSheet(entry: entry, settings: settingsStore.settings)
                 .frame(minWidth: 620, idealWidth: 760, minHeight: 520, idealHeight: 680)
+        }
+        .sheet(isPresented: $showDailyPractice) {
+            DailyPracticeSheet()
+                .environmentObject(practiceStore)
+                .environmentObject(store)
         }
         // The sub-views own their own headers; make sure no top inset lingers.
         .navigationTitle("")
@@ -100,6 +109,39 @@ struct InsightView: View {
                     ? "先到设置填 API Key"
                     : "随机挑一篇过去的日记，AI 帮你回顾那天")
         )
+    }
+
+    /// "🌙 今日签" button — opens the daily micro-practice sheet.
+    /// Always enabled (no LLM call). When the user has already
+    /// completed today, the badge shows a checkmark; otherwise
+    /// it shows a moon.
+    private var dailyPracticeButton: some View {
+        Button {
+            showDailyPractice = true
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: practiceStore.isTodayDone
+                      ? "checkmark.seal.fill"
+                      : "moon.stars.fill")
+                Text("今日签")
+            }
+            .font(.callout.weight(.medium))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(DS.Brand.amber.opacity(practiceStore.isTodayDone ? 0.28 : 0.16))
+            }
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(DS.Brand.amber.opacity(0.5), lineWidth: 0.8)
+            }
+            .foregroundStyle(DS.Brand.amberDeep)
+        }
+        .buttonStyle(.plain)
+        .help(practiceStore.isTodayDone
+              ? "今天的内省已经完成，可以再看看"
+              : "今天的小内省：1-2 分钟")
     }
 }
 

@@ -56,4 +56,31 @@ struct EditorState: Equatable {
             isDirty: false
         )
     }
+
+    /// Pre-filled state for the "✍️ 现在写一封" flow. Title gets the
+    /// scenario's display name; body is seeded with a "## 信" section
+    /// containing the LLM-generated opening (caller passes the opening
+    /// text in). The `tags` carry the scenario id so the entry can be
+    /// retrieved / filtered later as a letter.
+    static func forLetter(scenario: LetterPrompt.Scenario, opening: String = "") -> EditorState {
+        let titleText = "给\(scenario.displayName)的信"
+        let bodyText: String
+        if opening.isEmpty {
+            bodyText = "## 给\(scenario.displayName)的信\n\n"
+        } else {
+            bodyText = "## 给\(scenario.displayName)的信\n\n\(opening)\n\n"
+        }
+        return EditorState(
+            date: Date(),
+            title: titleText,
+            mood: nil,
+            moodLabel: "",
+            weather: "",
+            tags: ["letter", scenario.id],
+            body: bodyText,
+            editingURL: nil,
+            originalFilename: nil,
+            isDirty: false
+        )
+    }
 }

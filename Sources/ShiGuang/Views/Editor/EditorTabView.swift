@@ -9,10 +9,14 @@ import SwiftUI
 ///     sheet (`.regularMaterial` card on top of the same backdrop).
 struct EditorTabView: View {
     @EnvironmentObject var store: DiaryStore
+    @EnvironmentObject var settingsStore: SettingsStore
 
     @State private var sheetItem: EditorSheetItem? = nil
     @State private var confirmDelete: DiaryEntry? = nil
     @State private var showTrash: Bool = false
+    @State private var showLetterChoice: Bool = false
+    /// When set, the letter-writing sheet is presented for this scenario.
+    @State private var letterScenario: LetterPrompt.Scenario?
 
     var body: some View {
         // Plain list (no ZStack needed — the sheet is system-managed).
@@ -35,6 +39,23 @@ struct EditorTabView: View {
                     showTrash = false
                     store.reload()
                 }
+            }
+            .sheet(isPresented: $showLetterChoice) {
+                LetterChoiceSheet { scenario in
+                    showLetterChoice = false
+                    // Defer to next runloop so the choice sheet
+                    // dismisses before the letter sheet opens.
+                    DispatchQueue.main.async {
+                        letterScenario = scenario
+                    }
+                }
+            }
+            .sheet(item: $letterScenario) { scenario in
+                LetterEditorSheet(
+                    scenario: scenario,
+                    settingsStore: settingsStore
+                )
+                .environmentObject(store)
             }
     }
 
@@ -74,6 +95,10 @@ struct EditorTabView: View {
             .padding(.bottom, DS.Spacing.s)
 
             newEntryButton
+                .padding(.horizontal, DS.Spacing.l)
+                .padding(.bottom, DS.Spacing.m)
+
+            letterCard
                 .padding(.horizontal, DS.Spacing.l)
                 .padding(.bottom, DS.Spacing.m)
 
@@ -134,6 +159,52 @@ struct EditorTabView: View {
         }
         .buttonStyle(.plain)
         .keyboardShortcut("n", modifiers: .command)
+    }
+
+    /// "🪞 写一封信" entry-point card. Sits right under the
+    /// "新建今日" button. Tapping it opens `LetterChoiceSheet`
+    /// where the user picks a scenario, after which the editor
+    /// sheet opens pre-filled with the LLM-generated opening.
+    private var letterCard: some View {
+        Button {
+            showLetterChoice = true
+        } label: {
+            HStack(alignment: .center, spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(DS.Brand.amber.opacity(0.15))
+                    Text("🪞")
+                        .font(.system(size: 22))
+                }
+                .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("写一封信")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text("给自己，或给重要的人。AI 只起头，主体由你写。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(14)
+            .background {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.regularMaterial)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(DS.Brand.amber.opacity(0.20), lineWidth: 0.5)
+            }
+        }
+        .buttonStyle(.plain)
+        .help("✍️ 现在写一封：5 种提示信，AI 帮你起头")
+        .disabled(store.folderURL == nil)
+        .opacity(store.folderURL == nil ? 0.5 : 1)
     }
 
     private var emptyState: some View {
