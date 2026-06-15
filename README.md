@@ -9,6 +9,18 @@
   <img src="docs/images/hero.png" width="900" alt="拾光 hero — 拾光 / 拾光，AI 重新看见你的日记">
 </p>
 
+<p align="center">
+  <a href="https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases/tag/v0.2.0">
+    <img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-v0.2.0-FFB95C?style=for-the-badge&logo=apple&logoColor=white" alt="下载 v0.2.0">
+  </a>
+  &nbsp;
+  <a href="https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases">
+    <img src="https://img.shields.io/github/v/release/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager?style=for-the-badge&color=E8A87C" alt="所有版本">
+  </a>
+</p>
+
+> **v0.2.0 新增 🌙 今日签 + ✍️ 现在写一封** — 自我探索 / 写作疗愈。
+
 ---
 
 ## 5 个 tab，一整天都在和过去的自己对话
@@ -20,6 +32,38 @@
 | 回收站（软删除 + 恢复） | 月度字数趋势 | 悬停高亮邻居 | `↩` 发送 / `⇧↩` 换行 | |
 
 > **macOS 26+ · Apple Silicon · Swift 5.9 / 6.2 · 纯 SwiftUI · 单进程，无第三方 SDK。**
+
+---
+
+## ✨ v0.2 新功能：自我探索 / 写作疗愈
+
+v0.2 的核心转向：从"日记 + AI 问答"升级到"**把写作本身变成疗愈**"。
+
+### 🌙 今日签（每日仪式）
+
+打开 app，**洞察 tab** 头部多了一个 **🌙 今日签** 按钮。点开是一个暗色 sheet，里面是今天的内省题目——从 24 个题库里按日期 hash 选，**同一天看到的题目是稳定的，跨日才换题**。
+
+题库覆盖 8 个类别：感激 / 承认 / 自我对话 / 观察 / 行动 / 问题 / 欣赏 / 释放。1-2 分钟写完，点 "我写完了 ✓" 自动保存为今天日记的 `## 🌙 今日签` 段。如果今天还没日记，自动建一个 `YYYY-MM-DD.md`。
+
+**关键设计**：题目池是**纯静态本地数据，0 token 成本**。连续 7 天显示 🔥，跳过不扣分（gentle streak）。
+
+### ✍️ 现在写一封（自我对话信）
+
+**写作 tab** 顶部多了一张 **🪞 写一封信** 卡片。点开有 5 种收信人：
+
+| 收信人 | 适合 |
+| --- | --- |
+| 🪞 3 个月前的自己 | 焦虑 / 抑郁 / 不知道该怎么办 |
+| 🕊 已经释怀的某天 | 回顾一段已经走出来的低谷 |
+| 🌱 1 年后的自己 | 迷茫 / 想立 flag |
+| 💌 想原谅的人 | 还在生气 / 内耗 |
+| 🌅 5 年后的自己 | 拖延 / 不知道开始 |
+
+**核心原则：LLM 只起头，主体必须用户自己写。** 写作疗愈的价值在"把话写下来"这个动作，不在"看 AI 描述你的感受"。
+
+所以流程是：选收信人 → AI 写 ~80 字开场白 + 收尾（10 秒）→ 完整编辑器打开，用户接着写 → 保存自动归档到今天日记，frontmatter `tags: [letter, scenario_id]`。
+
+可以随时点 "不，AI 帮不了，我自己来" 跳过 LLM 起头。
 
 ---
 
@@ -118,6 +162,14 @@
 
 ## 🏃 跑起来
 
+**下载现成 .app**：[Releases 页面](https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases) → 挂载 `ShiGuang-0.2.0.dmg` → 把 `ShiGuang.app` 拖到 `/Applications`。
+
+> **Gatekeeper 提示**：这是个人项目，没有 Apple Developer ID 签名，macOS 会弹"无法检查恶意软件"。两种解法：
+> 1. **右键打开**：`ShiGuang.app` 上右键 → 打开 → 在弹框里再点一次 "打开"，之后双击就正常。
+> 2. **解除 quarantine**：`xattr -dr com.apple.quarantine /Applications/ShiGuang.app`
+
+**或者从源码编译**：
+
 ```bash
 git clone https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager
 cd AfterGlow-AI-Powered-Reflective-Journal-Manager
@@ -169,10 +221,17 @@ LLM 看到的是 markdown 简化版（标题符去掉、链接保留文字、图
 
 ## 📦 版本
 
-[v0.1](https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases/tag/v0.1) — 2026-06-08
+- [v0.2.0](https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases/tag/v0.2.0) — 2026-06-15 · 🌙 今日签 + ✍️ 现在写一封
+- [v0.1](https://github.com/Rain-Shuoyu/AfterGlow-AI-Powered-Reflective-Journal-Manager/releases/tag/v0.1) — 2026-06-08
 
 ### Roadmap
 
+- ~~🌙 今日签（每日仪式）~~ — ✅ v0.2.0
+- ~~✍️ 现在写一封（自我对话信）~~ — ✅ v0.2.0
+- 🪞 镜像回放（echo own words, no commentary）
+- 🌧 情绪急救（one-line mood log on low-mood days）
+- 🕯 周年回响（1-year-ago today entry）
+- 📓 自我追问（LLM asks, user may answer）
 - 监听文件变化（自动刷新）
 - 导出周报 / 月报成 PDF
 - 多日记本（多目录切换）
