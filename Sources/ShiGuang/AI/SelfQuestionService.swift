@@ -20,10 +20,17 @@ import Foundation
 @MainActor
 final class SelfQuestionService: ObservableObject {
 
+    /// UserDefaults key for the "permanently disabled" flag.
+    /// When true, no questions are generated and the cache is
+    /// left alone (the user can re-enable from Settings at any
+    /// time, and the next refresh will refill the cache then).
+    private static let disabledKey = "DiaryInsight.SelfQuestion.userDisabled"
+
     @Published private(set) var questions: [SelfQuestion] = []
     @Published private(set) var isRefreshing: Bool = false
     @Published private(set) var lastError: String?
     @Published private(set) var lastRefreshed: Date?
+    @Published private(set) var isUserDisabled: Bool
 
     private let settingsStore: SettingsStore
     private let cacheURL: URL
@@ -32,6 +39,7 @@ final class SelfQuestionService: ObservableObject {
 
     init(settingsStore: SettingsStore) {
         self.settingsStore = settingsStore
+        self.isUserDisabled = UserDefaults.standard.bool(forKey: Self.disabledKey)
         // ~/Library/Application Support/ShiGuang/self-questions.json
         let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -49,7 +57,11 @@ final class SelfQuestionService: ObservableObject {
     /// empty), trigger a refresh in the background and return
     /// the stale set in the meantime (better than blocking the
     /// UI on a 30s LLM call).
+    ///
+    /// If the user has disabled self-question generation via
+    /// Settings, this is a no-op.
     func cachedOrRefresh(entries: [DiaryEntry]) {
+        guard !isUserDisabled else { return }
         if isCacheFresh() {
             return
         }
@@ -57,8 +69,9 @@ final class SelfQuestionService: ObservableObject {
     }
 
     /// Force a refresh — bypass cache. Called by the "换一批"
-    /// button.
+    /// button. Also a no-op when disabled.
     func refresh(entries: [DiaryEntry]) async {
+        guard !isUserDisabled else { return }
         guard !entries.isEmpty else {
             self.questions = []
             saveCache()
@@ -75,6 +88,23 @@ final class SelfQuestionService: ObservableObject {
             saveCache()
         } catch {
             self.lastError = error.localizedDescription
+        }
+    }
+
+    /// Toggle the user-disabled flag. Setting to `true` clears
+    /// the in-memory question list immediately (the cache file
+    /// is left alone — re-enabling will reuse it as a head
+    /// start). Setting to `false` schedules a background
+    /// refresh if the cache is stale.
+    func setUserDisabled(_ disabled: Bool) {
+        isUserDisabled = disabled
+        UserDefaults.standard.set(disabled, forKey: Self.disabledKey)
+        if disabled {
+            questions = []
+        } else {
+            // Re-enabling: trigger a refresh on next opportunity.
+            // We don't have entries here, so the caller (UI)
+            // will trigger it via cachedOrRefresh.
         }
     }
 

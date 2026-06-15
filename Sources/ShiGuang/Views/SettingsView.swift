@@ -7,12 +7,14 @@ struct SettingsView: View {
     @EnvironmentObject var practiceStore: DailyPracticeStore
     @EnvironmentObject var anniversaryStore: AnniversaryStore
     @EnvironmentObject var rescueStore: RescueStore
+    @State private var questionService: SelfQuestionService?
     @State private var testing: Bool = false
     @State private var testResult: String?
     @State private var showApiKey: Bool = false
     @State private var confirmResetStreaks: Bool = false
     @State private var confirmToggleAnniversary: Bool = false
     @State private var confirmToggleRescue: Bool = false
+    @State private var confirmToggleSelfQuestion: Bool = false
 
     var body: some View {
         ScrollView {
@@ -82,6 +84,11 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity)
         .navigationTitle("")
         .toolbar(.hidden)
+        .onAppear {
+            if questionService == nil {
+                questionService = SelfQuestionService(settingsStore: settingsStore)
+            }
+        }
     }
 
     // MARK: - Header
@@ -518,6 +525,34 @@ struct SettingsView: View {
             .controlSize(.mini)
             .labelsHidden()
         }
+        Divider().opacity(0.3)
+
+        // ── 自我追问 card ─────────────────────────────────────
+        row {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("自我追问")
+                    .foregroundStyle(.primary)
+                Text((questionService?.isUserDisabled ?? false)
+                     ? "已关闭。写作 tab 顶部不再展示 AI 提取的问题。"
+                     : "每月 1 次，AI 从你的日记里提取悬而未决的问题。可关闭。")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+            Toggle("", isOn: Binding(
+                get: { !(questionService?.isUserDisabled ?? false) },
+                set: { newValue in
+                    if !newValue {
+                        confirmToggleSelfQuestion = true
+                    } else {
+                        questionService?.setUserDisabled(false)
+                    }
+                }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .labelsHidden()
+        }
 
         // ── Confirms ─────────────────────────────────────────
         .alert("重置今日签 streak？", isPresented: $confirmResetStreaks) {
@@ -543,6 +578,14 @@ struct SettingsView: View {
             }
         } message: {
             Text("你可以在这个开关处随时重新打开。")
+        }
+        .alert("关闭自我追问？", isPresented: $confirmToggleSelfQuestion) {
+            Button("取消", role: .cancel) {}
+            Button("关闭", role: .destructive) {
+                questionService?.setUserDisabled(true)
+            }
+        } message: {
+            Text("写作 tab 顶部的 待回答 卡片会变成「已关闭」状态。你可以在这个开关处随时重新打开。")
         }
     }
 

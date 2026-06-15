@@ -52,7 +52,9 @@ struct SelfQuestionCard: View {
     private var cardContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            if service.questions.isEmpty {
+            if service.isUserDisabled {
+                disabledState
+            } else if service.questions.isEmpty {
                 emptyOrLoading
             } else {
                 ForEach(service.questions.prefix(3)) { q in
@@ -165,6 +167,23 @@ struct SelfQuestionCard: View {
 
     // MARK: - Empty / loading
 
+    /// Static "已关闭" state shown when the user has toggled
+    /// self-question generation off in Settings. No question
+    /// rows, no "换一批" button — just a quiet reminder that
+    /// the feature exists but is paused.
+    private var disabledState: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "moon.zzz")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Text("自我追问已关闭。设置 → 仪式感 可重新打开。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
+    }
+
     private var emptyOrLoading: some View {
         Group {
             if service.isRefreshing {
@@ -207,7 +226,7 @@ struct SelfQuestionCard: View {
 
     private var footer: some View {
         HStack {
-            if let last = service.lastRefreshed {
+            if !service.isUserDisabled, let last = service.lastRefreshed {
                 Text("上次更新: \(relativeDate(last))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -225,7 +244,9 @@ struct SelfQuestionCard: View {
                 .foregroundStyle(DS.Brand.amber)
             }
             .buttonStyle(.plain)
-            .disabled(service.isRefreshing || settingsStore.settings.apiKey.isEmpty)
+            .disabled(service.isUserDisabled
+                      || service.isRefreshing
+                      || settingsStore.settings.apiKey.isEmpty)
         }
     }
 
