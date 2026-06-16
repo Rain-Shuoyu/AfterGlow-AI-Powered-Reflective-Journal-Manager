@@ -294,11 +294,13 @@ struct InsightView: View {
             .foregroundStyle(DS.Brand.amberDeep)
         }
         .buttonStyle(.plain)
-        .disabled(anniversaryEntries.isEmpty)
-        .opacity(anniversaryEntries.isEmpty ? 0.5 : 1)
-        .help(anniversaryEntries.isEmpty
-              ? "往年的今天还没有日记"
-              : "往年的今天你写过 \(anniversaryEntries.count) 篇")
+        .disabled(anniversaryEntries.isEmpty || anniversaryStore.isUserDisabled)
+        .opacity((anniversaryEntries.isEmpty || anniversaryStore.isUserDisabled) ? 0.5 : 1)
+        .help(anniversaryStore.isUserDisabled
+              ? "已在设置中关闭周年回响"
+              : (anniversaryEntries.isEmpty
+                  ? "往年的今天还没有日记"
+                  : "往年的今天你写过 \(anniversaryEntries.count) 篇"))
     }
 
     /// "🪞 镜像" button — opens the mirror reflection sheet.
@@ -360,9 +362,13 @@ struct InsightView: View {
             .foregroundStyle(Color(red: 0.55, green: 0.70, blue: 0.85))
         }
         .buttonStyle(.plain)
-        .disabled(rescueStore.currentSignal(entries: store.entries).level == .none)
-        .opacity(rescueStore.currentSignal(entries: store.entries).level == .none ? 0.5 : 1)
-        .help("查看你之前是怎么走出低谷的")
+        .disabled(rescueStore.isUserDisabled
+                  || rescueStore.currentSignal(entries: store.entries).level == .none)
+        .opacity((rescueStore.isUserDisabled
+                   || rescueStore.currentSignal(entries: store.entries).level == .none) ? 0.5 : 1)
+        .help(rescueStore.isUserDisabled
+              ? "已在设置中关闭情绪急救"
+              : "查看你之前是怎么走出低谷的")
     }
 }
 
